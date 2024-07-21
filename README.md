@@ -24,4 +24,4 @@ Nevertheless, the analysis is clearly time consuming and challenging task, neces
 - In other words, the evaluation time should be shortened and study results can be obtained much more easily and quickly.
 
 ## Contact
-Created by [@Shachar Dan](shachar.dan@desy.de) - feel free to contact me!
+Created by [@Shachar Dan](mailto:shachar.dan@desy.de) - feel free to contact me!
