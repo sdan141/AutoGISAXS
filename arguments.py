@@ -4,9 +4,11 @@ import argparse
 
 
 # mode
-CHECK = False
-REAL = False
 TEST = True
+REAL = False
+RUN = '_256_30'
+
+CHECK = False
 SIM = False
 PLOT = False
 

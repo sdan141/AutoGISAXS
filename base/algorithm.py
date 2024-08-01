@@ -88,32 +88,36 @@ class AlgorithmBase:
 
 
     def train_on_simulations(self, images, target_values, validation_data):
-        images_validation, targets_validation = validation_data
+        # set_validation_data
+        images_validation, targets_validation = self.set_validation_data(validation_data)
         # convert images to tensor
         images = self.create_input_tensor(images)
         # set optimizer
         opt = optimizers.Adam(learning_rate = 0.0001, decay = 1e-6)
-        # get training and validation labels
+        # get training and validation labels (one-hot vectors)
         training_labels = {}
         validation_labels = {}
         for key in self.keys:
             # NOTE: label_coder should return numpy arrays!
             training_labels[key] = self.label_coder(target_values[key].to_numpy(), key)
             validation_labels[key] = self.label_coder(targets_validation[key].to_numpy(), key)
+        # convert dictionary labels to list of lists
         validation_data = (images_validation,list(validation_labels.values()))
         # compile the model
         self.model.compile(optimizer=opt, loss=losses.MeanAbsoluteError(), metrics=[metrics.MeanSquaredError(), metrics.RootMeanSquaredError()])
         self.model_compiled = True
         print(model.summary())
+
         # strart iteration
+        # repeat training to derive estimation for the model
         model_scores = []
         for i in MAX_VALIDATION_ROUND:
             # define model callbacks
             checkpoint_filepath = model_path + "/round_" + str(i) + "/weights_epoch-{epoch:02d}_acc-{val_accuracy:.3f}.h5"
-            h5_logger_callback = callbacks.ModelCheckpoint(filepath=checkpoint_filepath,monitor='val_accuracy',save_weights_only=True,mode='max')
+            h5_logger_callback = callbacks.ModelCheckpoint(filepath=checkpoint_filepath, monitor='val_accuracy', save_weights_only=True, mode='max')
             csv_logger_callback = callbacks.CSVLogger(filename=model_path + '/round_' + str(i) + '/history.csv')
             # train the model
-            history = self.model.fit(x=images,y=list(training_labels.values()),validation_data=validation_data,callbacks=[h5_logger_callback, csv_logger_callback],epochs=25,batch_size=256,shuffle=False)
+            history = self.model.fit(x=images, y=list(training_labels.values()), validation_data=validation_data, callbacks=[h5_logger_callback, csv_logger_callback], epochs=25, batch_size=256, shuffle=False)
             # draw training history plot
             #self.plot_model_accurarcy_and_loss(history=history.history, model_path=self.model_path + "/round_" + str(i))
             # obtain optimal number of epoch for the model, save scores to csv, load weights back to the model, delete weights
@@ -121,7 +125,7 @@ class AlgorithmBase:
             # and register the model score
             model_scores.append(model_score)
             # save model
-            self.save_model(only_weights=True, model_path=self.model_path + "/round_" + str(i))
+            #self.save_model(only_weights=True, model_path=self.model_path + "/round_" + str(i))
             # save predictions of validation data from the best model wrt expected MSE
             labels_validation_prediction = self.model.predict(images_validation)
             targets_validation_prediction = self.get_numerical_prediction(labels_validation_prediction)
@@ -138,7 +142,7 @@ class AlgorithmBase:
             # re-initialize model weights before next round
             self.reset_weights()
 
-        # estimate network reproducibility based on trained models, save best model wrt expected MSE
+        # estimate network TRAINING reproducibility based on trained models
         self.record_model_scores(model_scores, data='validation')
 
     def save_weights(self, model, model_path):
@@ -165,10 +169,9 @@ class AlgorithmBase:
             # predict labels for validation data
             labels_validation_prediction = self.model.predict(images_validation) # --->>> this is a list of lists!!! need to make a for loop to take it into acount!
             # coldbatch labels
-            targets_validation_prediction = self.get_numerical_prediction(labels_validation_prediction)
+            targets_validation_prediction_max, targets_validation_prediction_avg = self.get_numerical_prediction(labels_validation_prediction)
             # calculate expected MSE
-
-            expected_MSE = numpy.square(numpy.subtract(targets_validation_prediction['expected'],targets_validation)).mean()
+            expected_MSE = self.get_MSE(targets_validation_prediction_avg, targets_validation)
             val_MSE.append(expected_MSE)
             # pattern-match epoch number
             epoch = int(re.search('epoch-(\d+)',weights).groups(1)[0])
@@ -194,25 +197,6 @@ class AlgorithmBase:
         # retrun model score: best epoch, best expected MSE as dict
         return model_best_score
 
-    def get_numerical_prediction(self, labels_prediction):
-        # uses label_coder to decode labels and retrun dictionary
-        targets_prediction = dict.fromkeys(self.keys, [])
-        for i, key in self.keys:
-            targets_prediction[key] = dict.fromkeys(['max', 'expected'], [])
-            labels_prediction
-
-        pass
-
-    def save_experiment_prediction(self, target_values_true, target_values_prediction, data, model_path):
-        #
-        #
-        pass
-
-    def plot_model_accurarcy_and_loss(self, history, model_path):
-        max_val_acc = round(max(history['val_accuracy']),3)
-        min_val_loss = round(min(history['val_loss']),3)
-        best_epoch = numpy.argmin(history['val_loss'])
-
     def test_on_experiment(self, images, target_values):
         # preprocess image shape
         images = self.create_input_tensor(images)
@@ -227,6 +211,43 @@ class AlgorithmBase:
 
         # estimate network reproducibility based on trained models
         # self.record_model_scores(model_scores, data='test')
+
+    def get_numerical_prediction(self, labels_prediction):
+        # uses label_coder to decode labels and retrun dictionary
+        targets_prediction_max = dict.fromkeys(self.keys, [])
+        targets_prediction_avg = dict.fromkeys(self.keys, [])
+        for i, key in enumerate(self.keys):
+            targets_prediction_max[key] = label_coder.coldbatch_maximum(labels_prediction[i], key)
+            targets_prediction_avg[key] = label_coder.coldbatch_average(labels_prediction[i], key)
+
+        return targets_prediction_max, targets_prediction_avg
+        # targets_prediction = dict.fromkeys(self.keys, [])
+        # for i, key in enumerate(self.keys):
+        #     targets_prediction[key] = dict.fromkeys(['max', 'average'], [])
+        #     numeric_max = label_coder.coldbatch_maximum(labels_prediction[i], key)
+        #     targets_prediction[key]['max'] = numeric_max
+        #     numeric_avg = label_coder.coldbatch_average(labels_prediction[i], key)
+        #     targets_prediction[key]['average'] = numeric_avg
+
+    def get_MSE(self, values, targets):
+        if isinstance(values, dict):
+            mse_values = []
+            for i, key in enumerate(values):
+                mse_values.append(self.get_MSE(values[key], targets[i]))
+            return sum(mse_values)/len(values)
+        return numpy.square(numpy.subtract(values, targets)).mean()
+
+
+    def save_experiment_prediction(self, target_values_true, target_values_prediction, data, model_path):
+        #
+        #
+        pass
+
+    def plot_model_accurarcy_and_loss(self, history, model_path):
+        max_val_acc = round(max(history['val_accuracy']),3)
+        min_val_loss = round(min(history['val_loss']),3)
+        best_epoch = numpy.argmin(history['val_loss'])
+
 
     def plot_model(self, path):
         utils.plot_model(self.model, path + 'results/' + self.TYPE.lower() + '_model_plot.pdf', show_shapes=True, show_layer_names=False)

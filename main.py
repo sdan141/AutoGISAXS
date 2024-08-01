@@ -26,8 +26,6 @@ if __name__ == '__main__':
     path_other_validation = '/home/danshach/pot_store/beegfs_scratch/dependencies/validation_data'
     path_other_validation_data = {'path': path_other_validation, 'files': ['validation_ausi_400K.npy'] 'target_value_files': ['validation_ausi_400K_target_values.csv']}
 
-
-
     # hdf5 databases with simulated form and structure factors
     if arg.sim_source=='factors_h5':
         path_simulation_data = {'path': path_simulation, 'files': ['database_1.h5', 'database_2.h5']}
@@ -35,7 +33,7 @@ if __name__ == '__main__':
     if arg.sim_source=='ready_h5':
         path_simulation_data = {'path': path_simulation, 'files': ['database_ready.h5']}
     # databases on files with simulated form and structure factors
-    if arg.sim_aource=='factors_file':
+    if arg.sim_source=='factors_file':
         path_simulation_data = {'path': path_simulation, 'files':[{'image_files': ['isGISAXS_database_sim.npz'],
                                                          'target_value_files': ['structure_factor_target_values.csv', 'form_factor_target_values.csv']}]}
 
@@ -50,11 +48,11 @@ if __name__ == '__main__':
     # initialize data augmentation instance
     data_augmentation = data_augmentation.DataAugmentation(experiment_setup=experiment_setup, detector=detector)
 
-
-    # dimension of putput unit for the neural network
+    # dimension of output unit for the neural network
     output_units = {'radius': arg.radius_classes, 'distance':arg.distance_classes,
                  'omega':arg.omega_classes, 'sigma':arg.sigma_classe}
 
+    # intervals for trainning scope
     intervals =
     {
         'radius':
@@ -76,48 +74,29 @@ if __name__ == '__main__':
         'distance':  intervals['distance']['medium'],
         'sigma_radius': intervals['sigma_radius']['costume'],
         'omega_distance':  intervals['omega_distance']['costume']}
-    # intervals for trainning scope
-    intervals ={
-        'radius': 'all',
-        'distance': 'medium',
-        'sigma_radius': 'costume',
-        'omega_distance': 'costume'}
 
     # constrains for including simulations
     constrains = {'fast_sim': arg.fast_sim, 'samples': None, 'check': arg.check}
+
     # create simulation object with constrains
     simulation = simulation_dataloader.Simulation(path=path_simulation_data, sim_source=arg.sim_source,
                                                   experiment_setup=experiment_setup, detector=detector,
-                                                  constrains=constrains, intervals=chosen_intervals) # experiment set_up & detector
-
-    # interested in generating simulations and saving (saves time when testing)
-    if arg.sim:
-        simulation_images, simulation_target_values = simulation.load_data()
-        file_simulations = f'{path_project}/raw_simulations/simulation_dataset_{dt.month:02d}{dt.day:02d}.npy'
-        with open(file_simulations, 'wb') as f:
-            np.save(simulation_images)
-            np.save(simulation_target_values)
-            # FIXME: SAVE SIMULATION GENERATING PARAMETERS (?)
-        exit()
-
-    if arg.real:
-        # create real object
-        real = real_dataloader.Real(data_path=path_unlabeled_experiment_data, fast_real=arg.fast_real)
-        #fit_experiment_ready
+                                                  constrains=constrains, intervals=chosen_intervals)
 
     if arg.test:
         # create experiment object
         experiment = experiment_dataloader.Experiment(data_path=path_experiment_data, fast_exp=arg.fast_exp)
         # fit experiment images
         if arg.fast_exp:
+            # experiment images are already extracted from cbf files
             experiment_images, experiment_target_values = data_augmentation.fit_experiment_ready(experiment=experiment)
         else:
             experiment_images, experiment_target_values = data_augmentation.fit_experiment(experiment=experiment)
 
     # fit simulation images
     if arg.fast_sim:
+        # simulation images are already extracted from database files
         simulation_images, simulation_target_values = data_augmentation.fit_simulation_ready(simulation=simulation)
-
     else:
         simulation_images, simulation_target_values = data_augmentation.fit_simulation(simulation=simulation)
 
@@ -129,7 +108,7 @@ if __name__ == '__main__':
     elif arg.validation == 'sim':
         validation_data = 'sim'
     elif arg.validation == 'other':
-        validation_data = real.set_other_validation_data(path_other_validation_data)
+        validation_data = path_other_validation_data
     else:
         validation_data = None
 
@@ -137,19 +116,26 @@ if __name__ == '__main__':
                                'estimation': arg.estimation, 'morphology': arg.morphology, 'distribution': arg.distr}
 
     algorithm = intialize_algorithm(algorithm=arg.algorithm, input_shape=(simulation_images[0].shape + (1,)), parameter=deep_learning_parameter, output_units=output_units)
-    algorithm.train_on_simulations()
+    algorithm.train_on_simulations(simulation_images, simulation_target_values)
+    # algorithm.train_on_experiments()
     algorithm.test_on_experiment()
+    # algorithm.test_on_simulations()
     algorithm.estimate_model()
-    #algorithm.test_real()
 
+    if arg.real:
+        # create real object
+        real = real_dataloader.Experiment(data_path=path_unlabeled_experiment_data, fast_real=arg.fast_real)
+        #algorithm.test_real()
+        # initialize algorithm
+        algorithm = intialize_algorithm(algorithm=arg.algorithm, input_shape=(real_images[0].shape + (1,)), parameter=deep_learning_parameter)
+        # predict parameter
+        algorithm.real(images=real_images, files=files)
 
-    if arg.estimation == 'naive':
-        for i in range(MAX_ROUNDS)
-            algorithm = algorithm.initialize_algorithm(arg.algorithm, input_shape=(simulation_images[0].shape + (1,)), deep_learning_parameters, , )
-            algorithm.train_on_simulations(simulation_images, simulation_target_values, validation_data)
-            algorithm.test
-
-
+    # if arg.estimation == 'naive':
+    #     for i in range(MAX_ROUNDS)
+    #         algorithm = algorithm.initialize_algorithm(arg.algorithm, input_shape=(simulation_images[0].shape + (1,)), deep_learning_parameters, , )
+    #         algorithm.train_on_simulations(simulation_images, simulation_target_values, validation_data)
+    #         algorithm.test
 
 
     # maybe just one execution each time!!! arg.morphology ::= 'radius'| 'distance' | 'all' | 'radius_sigma' | 'distance_omega'
@@ -162,29 +148,3 @@ if __name__ == '__main__':
             #simulation_labels_radius = label_coder.create_labels(key='radius', target_values=simulation_target_values.radius)
             #experiment_labels_radius = label_coder.create_labels(key='radius', target_values=experiment_target_values.distance) # comment if real
             # initialize algorithm
-            deep_learning_parameter = {'algorithm': arg.network, 'path': path_project, 'validation': arg.validation, 'estimation': arg.estimation, 'morphology': arg.morphology}
-            algorithm_radius = intialize_algorithm(input_shape=(simulation_images[0].shape + (1,)),output_shape=arg.radius_classes, parameter=deep_learning_parameter, label_coder=label_coder)
-
-            K = '400'
-            validation_data = (experiment_images[K], experiment_target_values[K]) if 'exp' in arg.validation else None
-            algorithm_radius.train_on_simulations(images=simulations, target_values=simulation_target_values, validation=validation_data)
-            algorithm_radius.test_on_experiment(images=experiment_images, target_values=experiment_target_values)
-
-        if arg.nn_radius != 'none':
-            simulation_labels_distance = label_coder.create_labels(key='distance', target_values=simulation_target_values.radius)
-            experiment_labels_distance = label_coder.create_labels(key='distance', target_values=experiment_target_values.distance) # comment if real
-            # initialize algorithm
-            deep_learning_parameter = {'algorithm': arg.nn_distance, 'path': path_project}
-            algorithm_distance = intialize_algorithm(input_input_shape=(simulation_images[0].shape + (1,)),output_shape=simulation_labels_distance[0].shape, parameter=deep_learning_parameter)
-
-        # learn on simulation images
-        algorithm.fit_on_simulation(images=simulation_images, target_values=simulation_target_values)
-        algorithm.test_on_experiment(images=experiment_images, target_values=experiment_target_values)
-        if arg.real:
-            real = real_dataloader.Experiment(data_path=path_real_experiment_data)
-            # fit experiment images
-            real_images, files = data_augmentation.fit_real(real=real)
-            # initialize algorithm
-            algorithm = intialize_algorithm(algorithm=arg.algorithm, input_shape=(real_images[0].shape + (1,)), parameter=deep_learning_parameter)
-            # predict parameter
-            algorithm.real(images=real_images, files=files)
