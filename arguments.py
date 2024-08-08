@@ -9,25 +9,25 @@ REAL = False
 RUN = '_256_30'
 
 CHECK = False
-SIM = False
-PLOT = False
+# SIM = False
+# PLOT = False
 
 # experiment parameters
 MATERIALS = 'AuSi'
-WAVELENGTH = 0.09472
-INCIDENTE_ANGLE = 0.395
+WAVELENGTH = 0.09472 #
+INCIDENCE_ANGLE = 0.395
 DB_X = 466
 DB_Y = 135
-DISTANCE = 2357
+DISTANCE = 2357 # mm
 DETECTOR = 'Pilatus1M'
 MASKFILE = 'Pilatus_1M.tif'
 EXP_MASKFILE = 'Pilatus_1M.tif'
 
 # data preparation parameters
-PREMADE_SIM = True # simulations are generated in advance (loaded)
-PREMADE_EXP = True # experiments are prepared in advance (loaded)
-SIM_SOURCE = 'ready_file'
-BETA = None
+PREMADE_SIM = False # simulations are generated in advance (loaded)
+PREMADE_EXP = False # experiments are prepared in advance (loaded)
+SIM_SOURCE = 'factors_h5'#'ready_file'
+BETA = 0.75
 
 # validation parameters
 VALIDATION = 'exp' # 'exp_reduced' # 'sim'
@@ -36,17 +36,15 @@ VALIDATION = 'exp' # 'exp_reduced' # 'sim'
 # sim using only simulations for validatio
 
 # deep learning parameters
-NN = 'CNN' #'CNN' # 'MLP' # 'VGG' # 'DENSE'
-FLAG = 'radius' # 'distance'
-DISTR = False
+NN = 'MLP' # 'CNN' #'CNN' # 'VGG' # 'DENSE'
+FLAG = 'radius' # 'distance' # 'all'
+DISTRIBUTION = False
 
-ESTIMATION = 'naive' # naive confidence estimation
+ESTIMATION = 'naive' # naive confidence estimation #'cross_val' # Monte Carlo cross validation to obtain estimation -> only if validation data is same as for training
 LABELS_R = 280
 LABELS_D = 370
 LABELS_S = 200
 LABELS_W = 200
-#'cross_val' # Monte Carlo cross validation to obtain estimation -> only if validation data is same as for training
-
 
 
 def initialize_argument_parser():
@@ -55,9 +53,9 @@ def initialize_argument_parser():
     # modes
     parser.add_argument('--test', dest='test', type=bool, help='train and test the network', default=TEST)
     parser.add_argument('--real', dest='real', type=bool, help='train and execute the network on unlabeled data', default=REAL)
-    parser.add_argument('--check', dest='check', type=bool, help='check that pipeline works as expected', default=CHECK)
-    parser.add_argument('--sim', dest='sim', type=bool, help='create new simulations and save them', default=SIM)
-    parser.add_argument('--plot', dest='plot', type=bool, help='create sample plots in runtime', default=PLOT)
+    #parser.add_argument('--check', dest='check', type=bool, help='check that pipeline works as expected', default=CHECK)
+    #parser.add_argument('--sim', dest='sim', type=bool, help='create new simulations and save them', default=SIM)
+    #parser.add_argument('--plot', dest='plot', type=bool, help='create sample plots in runtime', default=PLOT)
 
     # experiment parameter
     parser.add_argument('--materials', dest='materials', type=str, help='considered materials', default=MATERIALS)
@@ -70,6 +68,7 @@ def initialize_argument_parser():
                         choices=['Eiger500k', 'Eiger1M', 'Eiger4M', 'Eiger9M', 'Eiger16M', 'Pilatus100k', 'Pilatus200k', 'Pilatus300k',
                                  'Pilatus300kw', 'Pilatus1M', 'Pilatus2M', 'Pilatus6M'], default=DETECTOR)
     parser.add_argument('--maskfile', dest='maskfile', type=str, help='file containing the mask', default=MASKFILE)
+    parser.add_argument('--experiment_maskfile', dest='experiment_maskfile', type=str, help='file containing the mask', default=EXP_MASKFILE)
 
     # data preparation parameters
     parser.add_argument('--fast_sim', dest='fast_sim', type=bool, help='use simulations prepared in advance', default=PREMADE_SIM)
@@ -82,7 +81,7 @@ def initialize_argument_parser():
                                                                      choices=['exp', 'exp_reduced', 'sim', 'other', 'none'], default=VALIDATION)
     parser.add_argument('--algorithm', dest='algorithm', type=str, help='select deep learning algorithm', choices=['CNN', 'MLP', 'VGG', 'Dense'], default=NN)
     parser.add_argument('--morph', dest='morphology', type=str, help='select morphological parameter to predict', choices=['all', 'radius', 'distance'], default=FLAG)
-    parser.add_argument('--distr', dest='distr', type=bool, help='predict distributions', default=DISTR)
+    parser.add_argument('--distr', dest='distr', type=bool, help='predict variance', default=DISTRIBUTION)
 
     parser.add_argument('--estimation', dest='estimation', type=str, help='select confidence estimation methode, keep in mind "cross_validation" suitable only when simulations are used as validation data',
                                                                      choices=['naive', 'cross_validation', 'none'], default=ESTIMATION)

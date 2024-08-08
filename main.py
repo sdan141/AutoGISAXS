@@ -3,10 +3,10 @@
 import arguments
 from datetime import date
 from base import simulation_dataloader, experiment_dataloader, real_dataloader, detector, setup, data_augmentation
-from deep_learning import MLPnet, CNNnet
+from deep_learning import MLPnet#, CNNnet
 
 
-def initialize_algorithm(algorithm, input_shape, parameter, output_units):
+def intialize_algorithm(algorithm, input_shape, parameter, output_units):
     if algorithm == 'MLP':
         return MLPnet.MLP2(input_shape, parameter, output_units)
     #elif algorithm == 'CNN'
@@ -18,13 +18,20 @@ if __name__ == '__main__':
 
     # set paths
     path_project = '/home/danshach/pot_store/beegfs_scratch/Xalantir' # necessary when working on the cluster
-    path_simulation = '/home/danshach/pot_store/beegfs_scratch/dependencies/simulation'
-    path_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/sputter/',
+
+    #path_simulation = '/home/danshach/pot_store/beegfs_scratch/dependencies/simulation'
+    path_simulation = '/home/danshach/pot_store/beegfs_scratch/Xalantir/data/simulation/'
+
+    path_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/simple_net/experiment/sputter/',
                             'folders': ['sputter_100K', 'sputter_300K', 'sputter_400K', 'sputter_500K'],
-                            'target_value_files': ['tar_100K.csv', 'tar_300K.csv', 'tar_400K.csv', 'tar_00K.csv']}#, 'first_frame': [190, 190]}
-    path_unlabeled_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/unlabeled/'}
+                            'target_value_files': ['tar_100K.csv', 'tar_300K.csv', 'tar_400K.csv', 'tar_500K.csv']}#, 'first_frame': [190, 190]}
+    # path_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/sputter/',
+    #                         'folders': ['sputter_100K', 'sputter_300K', 'sputter_400K', 'sputter_500K'],
+    #                         'target_value_files': ['tar_100K.csv', 'tar_300K.csv', 'tar_400K.csv', 'tar_00K.csv']}#, 'first_frame': [190, 190]}
+
+    # path_unlabeled_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/unlabeled/'}
     path_other_validation = '/home/danshach/pot_store/beegfs_scratch/dependencies/validation_data'
-    path_other_validation_data = {'path': path_other_validation, 'files': ['validation_ausi_400K.npy'] 'target_value_files': ['validation_ausi_400K_target_values.csv']}
+    path_other_validation_data = {'path': path_other_validation, 'files': ['validation_ausi_400K.npy'], 'target_value_files': ['validation_ausi_400K_target_values.csv']}
 
     # hdf5 databases with simulated form and structure factors
     if arg.sim_source=='factors_h5':
@@ -39,50 +46,51 @@ if __name__ == '__main__':
 
     # initialize detector
     DetectorClass = getattr(detector, arg.detector)
-    detector = detector.DetectorClass(mask=(path_project + 'base/masks/' + arg.maskfile))
+    print(str(DetectorClass))
+    detector = DetectorClass(mask=(path_project + '/base/masks/' + arg.maskfile))
 
     # initialize experiment setup
     experiment_setup = setup.Experiment(path_project, experiment_parameter={'materials': arg.materials, 'wavelength': arg.wavelength, 'incidence_angle': arg.incidence_angle,
                                                                             'direct_beam_position': (arg.db_y, arg.db_x), 'sample_detector_distance': arg.distance},
-                                                                            detector=detector, experiment_maskfile=arg.experiment_maskfile)
+                                                                            detector=detector, experiment_maskfile=arg.experiment_maskfile)\
     # initialize data augmentation instance
     data_augmentation = data_augmentation.DataAugmentation(experiment_setup=experiment_setup, detector=detector)
 
     # dimension of output unit for the neural network
     output_units = {'radius': arg.radius_classes, 'distance':arg.distance_classes,
-                 'omega':arg.omega_classes, 'sigma':arg.sigma_classe}
+                 'omega':arg.omega_classes, 'sigma':arg.sigma_classes}
 
-    # intervals for trainning scope
-    intervals =
-    {
+    # intervals for trainning scope (for simulations)
+    intervals = {
         'radius':
                 {'all': {'start': 0.5, 'stop': 7.6, 'step': 0.1}, 'low': {'start': 0.5, 'stop': 4.6, 'step': 0.1}, 'medium': {'start': 1.5, 'stop': 5.6, 'step': 0.1},
-                 'high': {'start': 2.5, 'stop': 7.6, 'step': 0.1}, 'stepsize': {'start': 1.0, 'stop': 8.0, 'step': 1.0}, 'costume':{'start': 1.2, 'stop': 7.6, 'step': 0.1}},
+                 'high': {'start': 2.5, 'stop': 7.6, 'step': 0.1}, 'stepsize': {'start': 1.0, 'stop': 8.0, 'step': 1.0}, 'costume':{'start': 1.2, 'stop': 7.6, 'step': 0.1},
+                 'test':{'start': 1.2, 'stop': 7.6, 'step': 0.1}},
         'distance':
                 {'all': {'start': 0.5, 'stop': 7.6, 'step': 0.1}, 'low': {'start': 0.5, 'stop': 4.6, 'step': 0.1}, 'medium': {'start': 1.5, 'stop': 5.6, 'step': 0.1},
-                 'high': {'start': 2.5, 'stop': 7.6, 'step': 0.1}, 'stepsize': {'start': 1.0, 'stop': 8.0, 'step': 1.0}, 'costume':{'start': 1.2, 'stop': 7.6, 'step': 0.1}},
+                 'high': {'start': 2.5, 'stop': 7.6, 'step': 0.1}, 'stepsize': {'start': 1.0, 'stop': 8.0, 'step': 1.0}, 'costume':{'start': 1.2, 'stop': 7.6, 'step': 0.1},
+                 'test':{'start': 10.0, 'stop': 10.2, 'step': 0.1}},
         'sigma_radius':
                 {'all': {'start': 0.1, 'stop': 0.51, 'step': 0.01}, 'low': {'start': 0.1, 'stop': 0.25, 'step': 0.01}, 'medium': {'start': 0.18, 'stop': 0.33, 'step': 0.01},
-                 'high': {'start': 0.33, 'stop': 0.51, 'step': 0.01}, 'stepsize': {'start': 0.1, 'stop': 0.51, 'step': 0.1}, 'costume': {'start': 0.15, 'stop': 0.31, 'step': 0.05}},
+                 'high': {'start': 0.33, 'stop': 0.51, 'step': 0.01}, 'stepsize': {'start': 0.1, 'stop': 0.51, 'step': 0.1}, 'costume': {'start': 0.15, 'stop': 0.31, 'step': 0.05},
+                 'test':{'start': 0.2, 'stop': 0.21, 'step': 0.01}},
         'omega_distance':
                 {'all': {'start': 0.1, 'stop': 0.51, 'step': 0.01}, 'low': {'start': 0.1, 'stop': 0.25, 'step': 0.01}, 'medium': {'start': 0.18, 'stop': 0.33, 'step': 0.01},
-                 'high': {'start': 0.33, 'stop': 0.51, 'step': 0.01}, 'stepsize': {'start': 0.1, 'stop': 0.51, 'step': 0.1}, 'costume': {'start': 0.18, 'stop': 0.28, 'step': 0.01}}
+                 'high': {'start': 0.33, 'stop': 0.51, 'step': 0.01}, 'stepsize': {'start': 0.1, 'stop': 0.51, 'step': 0.1}, 'costume': {'start': 0.18, 'stop': 0.28, 'step': 0.01},
+                 'test':{'start': 0.2, 'stop': 0.21, 'step': 0.01}}}
 
-    }
     chosen_intervals ={
         'radius': intervals['radius']['all'],
-        'distance':  intervals['distance']['medium'],
-        'sigma_radius': intervals['sigma_radius']['costume'],
-        'omega_distance':  intervals['omega_distance']['costume']}
+        'distance':  intervals['distance']['test'],
+        'sigma_radius': intervals['sigma_radius']['test'],
+        'omega_distance':  intervals['omega_distance']['test']}
 
     # constrains for including simulations
-    constrains = {'fast_sim': arg.fast_sim, 'samples': None, 'check': arg.check}
+    constrains = {'fast_sim': arg.fast_sim, 'samples': 1}#, 'check': arg.check}
 
     # create simulation object with constrains
     simulation = simulation_dataloader.Simulation(path=path_simulation_data, sim_source=arg.sim_source,
-                                                  experiment_setup=experiment_setup, detector=detector,
                                                   constrains=constrains, intervals=chosen_intervals)
-
     if arg.test:
         # create experiment object
         experiment = experiment_dataloader.Experiment(data_path=path_experiment_data, fast_exp=arg.fast_exp)
@@ -99,6 +107,9 @@ if __name__ == '__main__':
         simulation_images, simulation_target_values = data_augmentation.fit_simulation_ready(simulation=simulation)
     else:
         simulation_images, simulation_target_values = data_augmentation.fit_simulation(simulation=simulation)
+
+    print('# simulations:',len(simulation_images))
+    print(simulation_targets)
 
     # set validation_data
     if arg.validation == 'exp':
@@ -118,7 +129,7 @@ if __name__ == '__main__':
     algorithm = intialize_algorithm(algorithm=arg.algorithm, input_shape=(simulation_images[0].shape + (1,)), parameter=deep_learning_parameter, output_units=output_units)
     algorithm.train_on_simulations(simulation_images, simulation_target_values)
     # algorithm.train_on_experiments()
-    algorithm.test_on_experiment()
+    algorithm.test_on_experiment(experiment_images, experiment_target_values)
     # algorithm.test_on_simulations()
     algorithm.estimate_model()
 
@@ -139,12 +150,3 @@ if __name__ == '__main__':
 
 
     # maybe just one execution each time!!! arg.morphology ::= 'radius'| 'distance' | 'all' | 'radius_sigma' | 'distance_omega'
-
-    #if arg.network != 'none'
-    #    simulation_labels_radius = label_coder.create_labels(key='all', target_values=simulation_target_values)
-    #    experiment_labels_radius = label_coder.create_labels(key='all', target_values=experiment_target_values) # comment if real
-    # else:
-    #    if arg.nn_radius != 'none':
-            #simulation_labels_radius = label_coder.create_labels(key='radius', target_values=simulation_target_values.radius)
-            #experiment_labels_radius = label_coder.create_labels(key='radius', target_values=experiment_target_values.distance) # comment if real
-            # initialize algorithm

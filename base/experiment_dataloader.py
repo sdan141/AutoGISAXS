@@ -4,7 +4,7 @@
 import numpy as np
 import pandas as pd
 import fabio
-
+import glob
 
 class Dataset:
     def __init__(self, path, folder, file, fast_data, first_frame=None):
@@ -13,15 +13,17 @@ class Dataset:
         self.file = file
         self.fast_data = fast_data
         self.first_frame = None
+        self.sample = 10
 
 
     def get_dataframe(self):
+        print(self.path + self.folder + "/" + self.file)
         targets_dataframe = pd.read_csv(self.path + self.folder + "/" + self.file)
         return targets_dataframe
 
     def preprocess_dataframe(self, dataframe):
         # convert 'Frame' from float64 to int64
-        dataframe['Frame'] = dataframe['Frame'].astype(int)
+        dataframe['Frame'] = dataframe['Frame'].astype(int) + (260 if '300' in self.folder else 0) # need to modify the dataset eventually
         # keep relevant columns
         dataframe = dataframe[['Frame', 'Distance', 'Radius', 'thickness']]
         dataframe.insert(loc=0, column='Measurement', value=self.folder)
@@ -44,7 +46,10 @@ class Dataset:
             return self.get_ready_target_values()
 
         target_values = self.get_dataframe()
-        target_values = self.preprocss_dataframe(dataframe=target_values)
+        target_values = self.preprocess_dataframe(dataframe=target_values)
+        print(target_values)
+        if self.sample:
+            target_values = target_values[:10]
         return target_values
 
     def get_ready_target_values(self):
@@ -70,12 +75,20 @@ class Dataset:
                 number = str(frame).zfill(5) # format: "00000"
                 try:
                     # flip top and bottom (vertical flip in y-direction)
-                    image = np.flip(fabio.open(self.path + self.folder + '/sputter/' + self.folder + '_sputter_' + number + '.cbf').data, axis=0)
+                    image_file = self.path + self.folder + '/*' + number + '.cbf'
+                    image_file = glob.glob(image_file)[0]
+                    image = np.flip(fabio.open(image_file).data, axis=0)
                     images.append(image.astype(np.float32))
-                    summed_images.append(sum(images))
                 except FileNotFoundError as e:
                     print(f'\n Frame {frame} not available or does not exist. \nError: {e}\n')
                     continue
+                except IndexError as e:
+                    print(f'\n Frame {frame} not available or does not exist. \nError: {e}\n')
+                    continue
+            summed_images.append(sum(images))
+            if self.sample:
+                if len(summed_images)>=self.sample:
+                    break
         return summed_images
 
     def get_images(self):
@@ -86,8 +99,11 @@ class Dataset:
         for index, row in target_values.iterrows():
             number = str(row.Frame).zfill(5) # format: "00000"
             # flip top and bottom (vertical flip in y-direction)
-            image = np.flip(fabio.open(self.path + self.folder + '/sputter/' + self.folder + '_sputter_' + number + '.cbf').data, axis=0)
+            image = np.flip(fabio.open(self.path + self.folder + '/sputter/' + '_sputter_' + number + '.cbf').data, axis=0)
             images.append(image.astype(np.float32))
+            if self.sample:
+                if len(images)>=self.sample:
+                    break
         return images
 
     def get_ready_images(self):
@@ -97,11 +113,10 @@ class Dataset:
 
 
 class Experiment:
-    def __init__(self, data_path, fast_experiment):
+    def __init__(self, data_path, fast_exp):
         self.datasets = []
         for i in range(0, len(data_path['folders']), 1):
-            self.datasets.append(Dataset(path=data_path['path'], folder=data_path['folders'][i], file=data_path['target_value_files'][i], fast_data=fast_experiment))
-
+            self.datasets.append(Dataset(path=data_path['path'], folder=data_path['folders'][i], file=data_path['target_value_files'][i], fast_data=fast_exp))
 
     def get_target_values(self):
         dataframes = []

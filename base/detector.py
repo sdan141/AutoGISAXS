@@ -325,7 +325,7 @@ class Pilatus1M(Pilatus):
         self.maskfile = mask
 
     def load_mask(self):
-        if mask:
+        if self.maskfile:
             return fabio.open(self.maskfile).data
         else:
             return self.load_mask()
