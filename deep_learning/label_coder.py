@@ -21,6 +21,10 @@ class LabelCoder:
             self.keys = [key in self.keys if morphology in key]
         '''
     def create_labels(self, target_values, key=None):
+        '''
+        parameters
+        return
+        '''
         labels = []
         for target in target_values:
              labels.append(self.get_label(target, key))

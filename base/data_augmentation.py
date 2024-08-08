@@ -7,7 +7,7 @@ from skimage import morphology, segmentation, filters, util, transform
 
 class DataAugmentation:
 
-    def __init__(serlf, setup, detector, beta=None):
+    def __init__(self, experiment_setup, detector, beta=None):
         self.experiment_setup = experiment_setup
         self.detector = detector
         self.beta = beta
@@ -15,12 +15,12 @@ class DataAugmentation:
         self.add_noise = False
         self.median = False
         self.gradient = False
-        self.tau = None
-        self.gamma = None
+        self.tau = None     # global intensity threshold
+        self.gamma = None   # global background level
 
-####################################################
-# functions for simuation-experiment domain adaption
-####################################################
+    ####################################################
+    # functions for simuation-experiment domain adaption
+    ####################################################
 
     def get_vetical_cut_position(self):
         """
@@ -39,7 +39,7 @@ class DataAugmentation:
         y, x = self.experiment_setup.get_direct_beam_position()
         return x
 
-   def convert_from_cartesian_to_reciprocal_space(self):
+    def convert_from_cartesian_to_reciprocal_space(self):
         # create detector interval with respective pixel size
         height, width = self.detector.get_maximum_shape()
         db_y, db_x = self.experiment_setup.get_direct_beam_position()
@@ -161,31 +161,49 @@ class DataAugmentation:
                     mask[i, j] = 1.0
         return mask.astype(np.float32)
 
-    def bin_float(image,shape_to_bin):
-        binned_image = np.empty(shape=shape_to_bin)
-        y_bin = image.shape[0] / shape_to_bin[0]
-        x_bin = image.shape[1] / shape_to_bin[1]
-        for i in range(0, shape_to_bin[0],1):
-            for j in range(0, shape_to_bin[1],1):
+    def bin_float(self, to_bin, bin_to_shape):
+        binned_image = np.empty(shape=bin_to_shape)
+        y_bin = to_bin.shape[0] / bin_to_shape[0]
+        x_bin = to_bin.shape[1] / bin_to_shape[1]
+        for i in range(0, bin_to_shape[0],1):
+            for j in range(0, bin_to_shape[1],1):
                 from_y = math.floor(i*y_bin)
                 to_y = math.ceil((i+1)*y_bin)
                 from_x = math.floor(j*x_bin)
                 to_x = math.ceil((j+1)*x_bin)
-                binned_image[i,j] = image[from_y:to_y,from_x:to_x].sum()
+                binned_image[i,j] = to_bin[from_y:to_y,from_x:to_x].sum()
         return binned_image
 
-    def normalize(image):
+    def bin_int(self, to_bin, bin_to_shape, mode='sum'):
+        binned_image = np.empty(shape=bin_to_shape)
+        y_bin = to_bin.shape[0] / bin_to_shape[0]
+        x_bin = to_bin.shape[1] / bin_to_shape[1]
+        for i in range(0, bin_to_shape[0], 1):
+            for j in range(0, bin_to_shape[1], 1):
+                # floor: round number down to the nearest integer
+                # ceil: round a number upward to its nearest integer
+                from_y = i * int(y_bin)
+                to_y = (i + 1) * int(y_bin)
+                from_x = j * int(x_bin)
+                to_x = (j + 1) * int(x_bin)
+                if mode == 'sum':
+                    binned_image[i, j] = to_bin[from_y: to_y, from_x: to_x].sum()
+                elif mode == 'avg':
+                    binned_image[i, j] = to_bin[from_y: to_y, from_x: to_x].sum() / (y_bin * x_bin)
+        return binned_image
+
+    def normalize(self, image):
         return ((image - image.min()) / (image.max() - image.min())).astype(np.float32)
 
-   def mask_image(self, image, mask):
+    def mask_image(self, image, mask):
         masked_image = np.ma.masked_array(image, mask=mask).astype(np.float32)
         masked_image = masked_image.filled(fill_value=0.0)
         return masked_image
 
 
-###################
-# fitting functions
-###################
+    ###################
+    # fitting functions
+    ###################
 
     def fit_simulation_ready(self, simulation, path_to_fast_sim=None):
         """
@@ -212,7 +230,7 @@ class DataAugmentation:
 
         return simulations, simulation_targets
 
-    def fit_simulatoin(self, simulation):
+    def fit_simulation(self, simulation):
         """
         Adapt the simulated scattering images to the experimental scattering images
         :param: simulation the simulation class
@@ -230,7 +248,7 @@ class DataAugmentation:
         detector_mask = self.crop_detector_mask()
         shape_to_bin = (int(math.ceil(0.5 * detector_mask.shape[0])), int(math.ceil(0.5 * detector_mask.shape[1])))
         detector_mask = self.crop_window(self.bin_mask(detector_mask, bin_to_shape=shape_to_bin))
-        for image in images:
+        for i, image in enumerate(images):
             # check if peak is valid if not drop data point
             if simulation.valid_peak:
                 if not self.is_valid_peak(image, targets.distance[i]):
@@ -293,6 +311,8 @@ class DataAugmentation:
         """
         # load data
         experiment_images, experiment_target_values = experiment.load_data()
+        print(len(experiment_images))
+        print(experiment_images[0].shape)
         # start fitting
         fitted_experiment_images = []
         # shape to bin
@@ -300,7 +320,7 @@ class DataAugmentation:
         shape_to_bin = (int(math.ceil(0.5 * shape_cropped_experiment.shape[0])), int(math.ceil(0.5 * shape_cropped_experiment.shape[1])))
         detector_mask = self.crop_detector_mask()
         detector_mask = self.crop_window(self.bin_mask(detector_mask, bin_to_shape=shape_to_bin))
-        for image in (experiment_images):
+        for image in experiment_images:
             # crop
             image = self.crop_experiment(image=image)
             # bin
@@ -325,9 +345,9 @@ class DataAugmentation:
     def fit_real(self, real):
         pass
 
-####################################################
-# image processing functions - most will not be used
-####################################################
+    ####################################################
+    # image processing functions - most will not be used
+    ####################################################
 
     def add_poisson_shot_noise(self, image):
         """
@@ -439,8 +459,8 @@ class DataAugmentation:
     def calculate_py_max(self, D, mod='raw_exp'):
         lamda = self.experiment_setup.get_wavelength()
         d_sd = self.experiment_setup.get_sample_detector_distance()
-        db_x = self.experiment_setup.get_direct_beam_position[0]
-        px_y = self.detector.get_pixel2 * 1000 # pixel size in mm
+        db_x = self.experiment_setup.get_direct_beam_position()[0]
+        px_y = self.detector.get_pixel2() * 1000 # pixel size in mm
         if mod=='raw_exp':
             py_max = d_sd * (np.tan(2*np.arcsin(lamda/(2*D)))/px_y) + db_x # coordinate offset
         elif mod=='raw_sim':
@@ -451,7 +471,7 @@ class DataAugmentation:
 
         return py_max
 
-    def find_intensity_center(image, offset=15):
+    def find_intensity_center(self, image, offset=15):
         return np.argmax(np.sum(image[:,offset:],axis=0))+offset
 
     def is_valid_peak(self, image, distance, threshold=5):

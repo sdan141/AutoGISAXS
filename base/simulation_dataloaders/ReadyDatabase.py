@@ -5,7 +5,7 @@
 import numpy
 import h5py
 import pandas
-import tqdm
+#import tqdm
 import math
 
 class ReadyDatabase:

@@ -4,7 +4,7 @@
 import numpy
 import h5py
 import pandas
-import tqdm
+#import tqdm
 import math
 
 class FactorDatabase:
@@ -71,8 +71,11 @@ class FactorDatabase:
         for key in self.keys:
             images.append(self.get_structure(key))
             distance, omega_distance = self.get_structure_factor(key)
-            target_values = target_values.append(
-                {'id': self.id, 'key': key, 'distance': distance, 'omega_distance': omega_distance},
+            # target_values = target_values.append(
+            #     {'id': self.id, 'key': key, 'distance': distance, 'omega_distance': omega_distance},
+            #     ignore_index=True)
+            target_values = pandas.concat(
+                [target_values, pandas.DataFrame([{'id': self.id, 'key': key, 'distance': distance, 'omega_distance': omega_distance}])],
                 ignore_index=True)
         return images, target_values
 
@@ -82,7 +85,9 @@ class FactorDatabase:
         for key in self.keys:
             images.append(self.get_mff1(key))
             radius, sigma_radius = self.get_form_factor(key)
-            target_values = target_values.append({'id': self.id, 'key': key, 'radius': radius, 'sigma_radius': sigma_radius}, ignore_index=True)
+            #target_values = target_values.append({'id': self.id, 'key': key, 'radius': radius, 'sigma_radius': sigma_radius}, ignore_index=True)
+            target_values = pandas.concat([target_values, pandas.DataFrame([{'id': self.id, 'key': key, 'radius': radius, 'sigma_radius': sigma_radius}])], ignore_index=True)
+
         return images, target_values
 
     def get_target_values(self):
@@ -91,7 +96,8 @@ class FactorDatabase:
             distance, omega_distance = self.get_structure_factor(key)
             radius, sigma_radius = self.get_form_factor(key)
             row = {'key': key, 'distance': distance, 'omega_distance': omega_distance, 'radius': radius, 'sigma_radius': sigma_radius}
-            target_values = target_values.append(row, ignore_index=True)
+            #target_values = target_values.append(row, ignore_index=True)
+            target_values = pandas.concat([target_values, pandas.DataFrame([row])], ignore_index=True)
         return target_values
 
     def get_images(self):

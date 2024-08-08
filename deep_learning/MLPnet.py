@@ -1,6 +1,6 @@
 from tensorflow.keras import layers, models, backend
-from keras_applications import imagenet_utils
-import algorithm
+#from keras_applications import imagenet_utils
+from deep_learning import algorithm
 
 class MLPNet(algorithm.AlgorithmBase):
     TYPE = None
@@ -22,8 +22,9 @@ class MLPNet(algorithm.AlgorithmBase):
         algorithm.AlgorithmBase.__init__(self, model=self.model, parameter=parameter, morphology=morphology)
 
     def build_mlp2(self, input_shape, morphology, hidden=1024):
-        input_shape = imagenet_utils._obtain_input_shape(input_shape, default_size=224, min_size=32, data_format=backend.image_data_format(), require_flatten=True)
-        image = layers.Input(shape=input_image_shape,name="image")
+        print('input_shape to build_model:', input_shape)
+        #input_shape = imagenet_utils._obtain_input_shape(input_shape, default_size=224, min_size=32, data_format=backend.image_data_format(), require_flatten=True)
+        image = layers.Input(shape=input_shape,name="image")
         x = layers.Flatten()(image)
         x = layers.Dense(units=hidden, name='fc' + str(hidden))(x)
         x = layers.LeakyReLU(alpha=0.03)(x) if self.activation[0]=='l' else layers.ReLU()(x)
@@ -48,6 +49,5 @@ class MLPNet(algorithm.AlgorithmBase):
 
 class MLP2(MLPNet):
     TYPE = "MLP2"
-
     def __init__(self, input_shape, parameter, output_units):
         MLPNet.__init__(self, input_shape=input_shape, parameter=parameter, output_units=output_units)
