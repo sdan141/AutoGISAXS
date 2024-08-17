@@ -7,6 +7,7 @@ class MLPNet(algorithm.AlgorithmBase):
 
     def __init__(self, input_shape, parameter, output_units):
         self.output_units = output_units
+        self.validation = parameter['validation']
 
         morphology = ['radius','distance','sigma_radius','omage_distance']
         if not parameter['distribution']:
@@ -19,7 +20,7 @@ class MLPNet(algorithm.AlgorithmBase):
             self.model = self.build_mlp2(input_shape=input_shape, morphology=morphology)
         elif self.TYPE == "MLP3":
             self.model = self.build_mlp3(input_shape=input_shape, morphology=morphology)
-        algorithm.AlgorithmBase.__init__(self, model=self.model, parameter=parameter, morphology=morphology)
+        algorithm.AlgorithmBase.__init__(self, model=self.model, parameter=parameter, morphology=morphology, output_units=output_units)
 
     def build_mlp2(self, input_shape, morphology, hidden=1024):
         print('input_shape to build_model:', input_shape)
@@ -27,7 +28,7 @@ class MLPNet(algorithm.AlgorithmBase):
         image = layers.Input(shape=input_shape,name="image")
         x = layers.Flatten()(image)
         x = layers.Dense(units=hidden, name='fc' + str(hidden))(x)
-        x = layers.LeakyReLU(alpha=0.03)(x) if self.activation[0]=='l' else layers.ReLU()(x)
+        x = layers.LeakyReLU(alpha=0.03)(x) if self.activations[0]=='l' else layers.ReLU()(x)
 
         outputs = []
         if 'distance' in morphology:

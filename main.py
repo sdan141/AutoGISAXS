@@ -13,18 +13,21 @@ def intialize_algorithm(algorithm, input_shape, parameter, output_units):
 
 if __name__ == '__main__':
 
+    print('here we start')
     # parse arguments
     arg = arguments.parse()
 
     # set paths
     path_project = '/home/danshach/pot_store/beegfs_scratch/Xalantir' # necessary when working on the cluster
 
-    #path_simulation = '/home/danshach/pot_store/beegfs_scratch/dependencies/simulation'
     path_simulation = '/home/danshach/pot_store/beegfs_scratch/Xalantir/data/simulation/'
 
     path_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/simple_net/experiment/sputter/',
                             'folders': ['sputter_100K', 'sputter_300K', 'sputter_400K', 'sputter_500K'],
                             'target_value_files': ['tar_100K.csv', 'tar_300K.csv', 'tar_400K.csv', 'tar_500K.csv']}#, 'first_frame': [190, 190]}
+    
+    path_real_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/experiment/unlabeled/'}
+
     # path_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/sputter/',
     #                         'folders': ['sputter_100K', 'sputter_300K', 'sputter_400K', 'sputter_500K'],
     #                         'target_value_files': ['tar_100K.csv', 'tar_300K.csv', 'tar_400K.csv', 'tar_00K.csv']}#, 'first_frame': [190, 190]}
@@ -50,8 +53,9 @@ if __name__ == '__main__':
     detector = DetectorClass(mask=(path_project + '/base/masks/' + arg.maskfile))
 
     # initialize experiment setup
-    experiment_setup = setup.Experiment(path_project, experiment_parameter={'materials': arg.materials, 'wavelength': arg.wavelength, 'incidence_angle': arg.incidence_angle,
-                                                                            'direct_beam_position': (arg.db_y, arg.db_x), 'sample_detector_distance': arg.distance},
+    experiment_setup = setup.Experiment(path_project, experiment_parameter={'materials': arg.materials, 'wavelength': arg.wavelength, 
+                                                                            'incidence_angle': arg.incidence_angle, 'direct_beam_position': (arg.db_y, arg.db_x),
+                                                                            'sample_detector_distance': arg.distance},
                                                                             detector=detector, experiment_maskfile=arg.experiment_maskfile)\
     # initialize data augmentation instance
     data_augmentation = data_augmentation.DataAugmentation(experiment_setup=experiment_setup, detector=detector)
@@ -77,7 +81,8 @@ if __name__ == '__main__':
         'omega_distance':
                 {'all': {'start': 0.1, 'stop': 0.51, 'step': 0.01}, 'low': {'start': 0.1, 'stop': 0.25, 'step': 0.01}, 'medium': {'start': 0.18, 'stop': 0.33, 'step': 0.01},
                  'high': {'start': 0.33, 'stop': 0.51, 'step': 0.01}, 'stepsize': {'start': 0.1, 'stop': 0.51, 'step': 0.1}, 'costume': {'start': 0.18, 'stop': 0.28, 'step': 0.01},
-                 'test':{'start': 0.2, 'stop': 0.21, 'step': 0.01}}}
+                 'test':{'start': 0.2, 'stop': 0.21, 'step': 0.01}}
+                 }
 
     chosen_intervals ={
         'radius': intervals['radius']['all'],
@@ -109,7 +114,7 @@ if __name__ == '__main__':
         simulation_images, simulation_target_values = data_augmentation.fit_simulation(simulation=simulation)
 
     print('# simulations:',len(simulation_images))
-    print(simulation_targets)
+    print(simulation_target_values)
 
     # set validation_data
     if arg.validation == 'exp':
@@ -123,11 +128,11 @@ if __name__ == '__main__':
     else:
         validation_data = None
 
-    deep_learning_parameter = {'algorithm': arg.algorithm, 'path': path_project, 'validation': arg.validation,
-                               'estimation': arg.estimation, 'morphology': arg.morphology, 'distribution': arg.distr}
+    deep_learning_parameter = {'algorithm': arg.algorithm, 'path': path_project, 'validation': arg.validation, 'estimation': arg.estimation,
+                               'morphology': arg.morphology, 'distribution': arg.distr, 'beta': arg.beta}
 
     algorithm = intialize_algorithm(algorithm=arg.algorithm, input_shape=(simulation_images[0].shape + (1,)), parameter=deep_learning_parameter, output_units=output_units)
-    algorithm.train_on_simulations(simulation_images, simulation_target_values)
+    algorithm.train_on_simulations(simulation_images, simulation_target_values, validation_data)
     # algorithm.train_on_experiments()
     algorithm.test_on_experiment(experiment_images, experiment_target_values)
     # algorithm.test_on_simulations()

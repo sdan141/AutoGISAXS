@@ -2,15 +2,10 @@
 
 import argparse
 
-
 # mode
 TEST = True
 REAL = False
-RUN = '_256_30'
-
-CHECK = False
-# SIM = False
-# PLOT = False
+RUN = '_256_30' # test description
 
 # experiment parameters
 MATERIALS = 'AuSi'
@@ -41,11 +36,26 @@ FLAG = 'radius' # 'distance' # 'all'
 DISTRIBUTION = False
 
 ESTIMATION = 'naive' # naive confidence estimation #'cross_val' # Monte Carlo cross validation to obtain estimation -> only if validation data is same as for training
-LABELS_R = 280
+LABELS_R = 200#280
 LABELS_D = 370
 LABELS_S = 200
 LABELS_W = 200
 
+# mode
+TEST = True
+REAL = False
+RUN = '_256_30' # test description
+
+# experiment parameters
+MATERIALS = 'AuSi'
+WAVELENGTH = 0.09472 #
+INCIDENCE_ANGLE = 0.395
+DB_X = 466
+DB_Y = 135
+DISTANCE = 2357 # mm
+DETECTOR = 'Pilatus1M'
+MASKFILE = 'Pilatus_1M.tif'
+EXP_MASKFILE = 'Pilatus_1M.tif'
 
 def initialize_argument_parser():
     """Common configuration for parsers"""
@@ -53,9 +63,7 @@ def initialize_argument_parser():
     # modes
     parser.add_argument('--test', dest='test', type=bool, help='train and test the network', default=TEST)
     parser.add_argument('--real', dest='real', type=bool, help='train and execute the network on unlabeled data', default=REAL)
-    #parser.add_argument('--check', dest='check', type=bool, help='check that pipeline works as expected', default=CHECK)
-    #parser.add_argument('--sim', dest='sim', type=bool, help='create new simulations and save them', default=SIM)
-    #parser.add_argument('--plot', dest='plot', type=bool, help='create sample plots in runtime', default=PLOT)
+    parser.add_argument('--run', dest='run', type=str, help='identifier for the specific run', default=RUN)
 
     # experiment parameter
     parser.add_argument('--materials', dest='materials', type=str, help='considered materials', default=MATERIALS)

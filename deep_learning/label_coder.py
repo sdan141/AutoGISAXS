@@ -20,10 +20,10 @@ class LabelCoder:
         if morphology != 'all':
             self.keys = [key in self.keys if morphology in key]
         '''
-    def create_labels(self, target_values, key=None):
+    def create_labels(self, target_values, key):
         '''
         parameters
-        return
+        returns
         '''
         labels = []
         for target in target_values:
@@ -31,11 +31,14 @@ class LabelCoder:
         return labels
 
     def get_label(self, target, key):
-        label = [1 if round(target,2)==round(param,2) else 0 for param in self.probe_space[key]]
-        assert sum(label) > 1.0, "One-hot label sum larger than one"
-        assert sum(label) < 1.0, "One-hot label sum smaller than one"
+        if '_' in self.prob_space[key]:
+            label = [1 if round(target,2)==round(param,2) else 0 for param in self.prob_space[key]]
+        else: 
+            label = [1 if round(target,1)==round(param,1) else 0 for param in self.prob_space[key]]
+        assert sum(label) >= 1, f"One-hot label sum smaller than one: {sum(label)}, target: {round(target,2)} \n prob_space = {np.round(self.prob_space[key],2)}"
+        assert sum(label) <= 1, f"One-hot label sum larger than one: {sum(label)}, target: {round(target,2)} \n prob_space = {np.round(self.prob_space[key],2)}"
         return label
-
+    
     def coldbatch_maximum(self, labels, key):
         values = []
         for label in labels:

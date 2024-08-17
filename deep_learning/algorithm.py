@@ -1,6 +1,7 @@
 import numpy
 import pandas
 import os
+#import tensorflow as tf
 from tensorflow.keras import models, utils, callbacks, optimizers, losses, metrics
 # from sklearn.model_selection import train_test_split
 # from sklearn.utils import shuffle
@@ -8,17 +9,18 @@ from deep_learning import label_coder
 #from network_models import MLPNet, CNNNet
 from glob import glob
 import re
+from datetime import date
 
 
-MAX_ROUNDS = 1
+MAX_VALIDATION_ROUND = 1
 
 def custom_train_test_split(X, y, max_splits=10, test_size=0.2):
     num_samples = len(X)
     num_test_samples = int(num_samples * test_size)
     if num_test_samples == 0:
-        num_test_samples = 1  # Ensure at least one sample in the test set
+        num_test_samples = 1  # ensure at least one sample in the test set
     indices = numpy.arange(num_samples)
-    numpy.random.seed(42)  # For reproducibility
+    numpy.random.seed(42)  # for reproducibility
     numpy.random.shuffle(indices)
     splits = []
     for i in range(max_splits):
@@ -34,7 +36,7 @@ def custom_train_test_split(X, y, max_splits=10, test_size=0.2):
 class AlgorithmBase:
     TYPE = None
 
-    def __init__(self, model, parameter, morphology):
+    def __init__(self, model, parameter, morphology, output_units):
         self.model = model
         self.parameter = parameter
         self.model_compiled = False
@@ -88,41 +90,56 @@ class AlgorithmBase:
         images = numpy.reshape(images, (len(images),) + images[0].shape + (1,)).astype(numpy.float32)
         return images
 
-
+    def generate_labels(self, target_values):
+        labels = {}
+        for key in self.keys:
+            # NOTE: label_coder should return numpy arrays!
+            print(target_values)
+            labels[key] = self.label_coder.create_labels(target_values[key], key)
+        return labels
+    
+    def set_validation_data(self, validation_data):
+        if 'exp' in self.parameter['validation']:
+            images_validation, targets_validation = validation_data
+        else:
+            pass #TODO if sim:  
+        
+        return images_validation, targets_validation
+    
     def train_on_simulations(self, images, target_values, validation_data):
         # set_validation_data
         images_validation, targets_validation = self.set_validation_data(validation_data)
         # convert images to tensor
         images = self.create_input_tensor(images)
+        # images_validation = self.create_input_tensor(images_validation)
         # set optimizer
         opt = optimizers.Adam(learning_rate = 0.0001, decay = 1e-6)
         # get training and validation labels (one-hot vectors)
-        training_labels = {}
-        validation_labels = {}
-        for key in self.keys:
-            # NOTE: label_coder should return numpy arrays!
-            training_labels[key] = self.label_coder(target_values[key].to_numpy(), key)
-            validation_labels[key] = self.label_coder(targets_validation[key].to_numpy(), key)
+        training_labels = self.generate_labels(target_values)
+        validation_labels = self.generate_labels(targets_validation)
         # convert dictionary labels to list of lists
-        validation_data = (images_validation,list(validation_labels.values()))
+        validation_labels_list = [numpy.array([validation_labels[k][y] for k in validation_labels]) for y in range(len(images_validation))]
+        #validation_data = (images_validation,list(validation_labels.values()))
+        validation_data = (numpy.array(images_validation),numpy.array(validation_labels_list))
         # compile the model
-        self.model.compile(optimizer=opt, loss=losses.MeanAbsoluteError(), metrics=[metrics.MeanSquaredError(), metrics.RootMeanSquaredError()])
+        self.model.compile(optimizer=opt, loss=losses.MeanAbsoluteError(), metrics=[metrics.MeanSquaredError(), metrics.RootMeanSquaredError(),'accuracy'])
         self.model_compiled = True
-        print(model.summary())
+        print(self.model.summary())
 
         # strart iteration
-        # repeat training to derive estimation for the model
+        # repeat training to derive estimation for the model accuracy
         model_scores = []
-        for i in MAX_VALIDATION_ROUND:
+        for i in range(MAX_VALIDATION_ROUND):
             # define model callbacks
-            checkpoint_filepath = model_path + "/round_" + str(i) + "/weights_epoch-{epoch:02d}_acc-{val_accuracy:.3f}.h5"
+            checkpoint_filepath = self.model_path + "/round_" + str(i) + "/weights_epoch-{epoch:02d}_acc-{val_accuracy:.3f}.weights.h5"
             h5_logger_callback = callbacks.ModelCheckpoint(filepath=checkpoint_filepath, monitor='val_accuracy', save_weights_only=True, mode='max')
-            csv_logger_callback = callbacks.CSVLogger(filename=model_path + '/round_' + str(i) + '/history.csv')
+            csv_logger_callback = callbacks.CSVLogger(filename=self.model_path + '/round_' + str(i) + '_history.csv')
             # train the model
-            history = self.model.fit(x=images, y=list(training_labels.values()), validation_data=validation_data, callbacks=[h5_logger_callback, csv_logger_callback], epochs=25, batch_size=256, shuffle=False)
-            # draw training history plot
-            #self.plot_model_accurarcy_and_loss(history=history.history, model_path=self.model_path + "/round_" + str(i))
+            print('images.shape:', images.shape)
+            training_labels_list = [numpy.array([training_labels[k][y] for k in training_labels]) for y in range(len(images))]
+            history = self.model.fit(x=numpy.array(images), y=numpy.array(training_labels_list), validation_data=validation_data, callbacks=[h5_logger_callback, csv_logger_callback], epochs=2, batch_size=256, shuffle=False)
             # obtain optimal number of epoch for the model, save scores to csv, load weights back to the model, delete weights
+            print('finished training')
             model_score = self.update_model_with_optimal_parameters(images_validation=images_validation, targets_validation=targets_validation, model_path=self.model_path + "/round_" + str(i))
             # and register the model score
             model_scores.append(model_score)
@@ -155,17 +172,23 @@ class AlgorithmBase:
         # serialize weights to HDF5
         model.save_weights(model_path + "/weights.h5")
 
+    def save_model(self, model, model_path):
+        """
+        Save the complete model.
+        :param model: The model to be saved.
+        """
+        model.save(model_path + "/model.keras") 
+
     def update_model_with_optimal_parameters(self,images_validation, targets_validation, model_path):
         # list weight files
         weight_files = glob(model_path+"/weights_*-*.h5")
-        weights_files = sorted(weights_files)
-
+        weight_files = sorted(weight_files)
         epochs = []
         val_accs = []
         val_MSE = []
         best_id = 0
         # loop through weight files
-        for i,weights in enumerate(weights_files):
+        for i,weights in enumerate(weight_files):
             # load weights back to model
             self.model.load_weights(weights)
             # predict labels for validation data
@@ -173,7 +196,9 @@ class AlgorithmBase:
             # coldbatch labels
             targets_validation_prediction_max, targets_validation_prediction_avg = self.get_numerical_prediction(labels_validation_prediction)
             # calculate expected MSE
+            print('targets_validation_prediction_avg:', targets_validation_prediction_avg)
             expected_MSE = self.get_MSE(targets_validation_prediction_avg, targets_validation)
+            print('get_MSE is the problem?')
             val_MSE.append(expected_MSE)
             # pattern-match epoch number
             epoch = int(re.search('epoch-(\d+)',weights).groups(1)[0])
@@ -181,20 +206,20 @@ class AlgorithmBase:
             # pattern-match validation accuracy
             val_acc = float((re.findall('\d+\.\d+',weights))[0])
             val_accs.append(val_acc)
+            # potentially update index of best epoch
             if i!=0 and val_MSE[best_id] > expected_MSE:
-                # set new best epoch
                 best_id = i
         # load best weights back to model
-        self.model.load_weights(weights_files[best_id])
+        self.model.load_weights(weight_files[best_id])
         # save model scores
-        df_model_scores = pd.DataFrame({'epoch':epochs,'val_acc_MSE':val_accs,'expected_MSE':val_MSE}) # for saving the model scores
+        df_model_scores = pandas.DataFrame({'epoch':epochs,'val_acc_MSE':val_accs,'expected_MSE':val_MSE}) # for saving the model scores
         df_model_scores.to_csv(model_path + '/model_scores.csv')
         # set best score
         model_best_score = {'epoch':epochs[best_id],'val_acc_MSE':val_accs[best_id],'expected_MSE':val_MSE[best_id]}
         # remove unnecessary weight files- keep only the optimal one
         files_rm = glob(os.path.join(model_path,"weights_*-*.h5"))
         for f in files_rm:
-            if weights_files[best_id] not in f:
+            if weight_files[best_id] not in f:
                 os.remove(f)
         # retrun model score: best epoch, best expected MSE as dict
         return model_best_score
@@ -204,7 +229,7 @@ class AlgorithmBase:
         images = self.create_input_tensor(images)
         if self.model_compiled and self.model_path:
             #model_scores = []
-            for i in MAX_VALIDATION_ROUND:
+            for i in range(MAX_VALIDATION_ROUND):
                # load weights
                self.model = self.load_weights(model=self.model)
                # predict on labeled and experiment data
@@ -219,8 +244,8 @@ class AlgorithmBase:
         targets_prediction_max = dict.fromkeys(self.keys, [])
         targets_prediction_avg = dict.fromkeys(self.keys, [])
         for i, key in enumerate(self.keys):
-            targets_prediction_max[key] = label_coder.coldbatch_maximum(labels_prediction[i], key)
-            targets_prediction_avg[key] = label_coder.coldbatch_average(labels_prediction[i], key)
+            targets_prediction_max[key] = self.label_coder.coldbatch_maximum(labels_prediction[i], key)
+            targets_prediction_avg[key] = self.label_coder.coldbatch_average(labels_prediction[i], key)
 
         return targets_prediction_max, targets_prediction_avg
         # targets_prediction = dict.fromkeys(self.keys, [])
@@ -232,12 +257,22 @@ class AlgorithmBase:
         #     targets_prediction[key]['average'] = numeric_avg
 
     def get_MSE(self, values, targets):
+        # recursive function
+        # values is a dictionary at first
+        # empty list is created to save MSE value for each key
+        # the average of the MSE of the keys is returned
+        # when only one key the MSE of that key is returned 
+
         if isinstance(values, dict):
             mse_values = []
             for i, key in enumerate(values):
-                mse_values.append(self.get_MSE(values[key], targets[i]))
+                print(f"inside if what is the problem with the key?: ", key)
+                print('are the targets ok?', targets)
+                mse_values.append(self.get_MSE(values[key], targets[key]))
             return sum(mse_values)/len(values)
-        return numpy.square(numpy.subtract(values, targets)).mean()
+        else:
+            print(f"executing else, values: ", values)
+            return numpy.square(numpy.subtract(numpy.array(values), numpy.array(targets))).mean()
 
 
     def save_experiment_prediction(self, target_values_true, target_values_prediction, data, model_path):

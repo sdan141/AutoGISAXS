@@ -123,6 +123,8 @@ class Experiment:
         for dataset in self.datasets:
             dataframes.append(dataset.get_target_values())
         target_values = pd.concat(dataframes)
+        target_values.columns = target_values.columns.str.lower()
+
         return target_values
 
     def get_images(self, sum=True):
@@ -138,7 +140,7 @@ class Experiment:
         return self.get_images(), self.get_target_values()
 
     def get_type(self, K, images, targets, sample=None):
-        filter_targets_by_K = targets.Measurement=='sputter_'+K
+        filter_targets_by_K = targets.measurement=='sputter_'+K
         targets_K = targets[filter_targets_by_K]
         images_K = np.array(images)[filter_targets_by_K]
         if sample:
