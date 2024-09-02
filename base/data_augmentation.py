@@ -249,7 +249,7 @@ class DataAugmentation:
         shape_to_bin = (int(math.ceil(0.5 * detector_mask.shape[0])), int(math.ceil(0.5 * detector_mask.shape[1])))
         detector_mask = self.crop_window(self.bin_mask(detector_mask, bin_to_shape=shape_to_bin))
         for i, image in enumerate(images):
-            # check if peak is valid if not drop data point
+            # check if peak is valid if not drop data point # after processing and before fitted_images.append if using mode "fitted_sim" 
             if simulation.valid_peak:
                 if not self.is_valid_peak(image, targets.distance[i]):
                     targets = targets.drop(i)
@@ -277,7 +277,7 @@ class DataAugmentation:
             # append images
             fitted_images.append(image)
 
-        targets = targets.reset_index()
+        targets = targets.reset_index(drop=True)
 
         return fitted_images, targets
 
@@ -311,8 +311,6 @@ class DataAugmentation:
         """
         # load data
         experiment_images, experiment_target_values = experiment.load_data()
-        print(len(experiment_images))
-        print(experiment_images[0].shape)
         # start fitting
         fitted_experiment_images = []
         # shape to bin
@@ -435,8 +433,8 @@ class DataAugmentation:
                 step = int(1/sample_perc)
                 intensities = image[1:image.shape[0]:step,1:image.shape[1]:step].flatten()
                 self.gamma, self.tau = self.compute_background_level_and_intensity_threshold(intensities, beta)
-            image[image < thresh_gama] = self.gamma
-            image[image > thresh_tau] = self.tau
+            image[image < self.gamma] = self.gamma
+            image[image > self.tau] = self.tau
 
         else:
             step = int(1/sample_perc)
@@ -450,8 +448,8 @@ class DataAugmentation:
                 if not self.tau:
                     self.tau = tau
                 tau = self.tau
-            image[image < thresh_gama] = gamma
-            image[image > thresh_tau] = tau
+            image[image < gamma] = gamma
+            image[image > tau] = tau
 
         return image
 
@@ -468,14 +466,13 @@ class DataAugmentation:
         elif mod=='fitted':
             offset = self.detector.get_maximum_shape()[1] - self.get_horizontal_cut_position()
             py_max = d_sd * (np.tan(2*np.arcsin(lamda/(2*D)))/px_y) +  offset # coordinate offset
-
         return py_max
 
     def find_intensity_center(self, image, offset=15):
         return np.argmax(np.sum(image[:,offset:],axis=0))+offset
 
-    def is_valid_peak(self, image, distance, threshold=5):
-        target_peak = self.calculate_py_max(distance, mod="raw_sim")
+    def is_valid_peak(self, image, distance, threshold=2):
+        target_peak = self.calculate_py_max(distance, mod="raw_sim") # eventually try with fitted_sim
         is_peak = self.find_intensity_center(image)
         if abs(target_peak - is_peak) > threshold:
             return False

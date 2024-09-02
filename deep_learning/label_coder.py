@@ -15,11 +15,7 @@ class LabelCoder:
         self.omega_distance= np.arange(0.1, 0.1+self.n_omega_units*0.01, 0.01)
 
         self.prob_space = {'radius':self.radius, 'distance': self.distance, 'sigma_radius': self.sigma_radius, 'omega_radius': self.omega_distance}
-        '''
-        if distr else ['radius', 'distance']
-        if morphology != 'all':
-            self.keys = [key in self.keys if morphology in key]
-        '''
+
     def create_labels(self, target_values, key):
         '''
         parameters
@@ -28,16 +24,16 @@ class LabelCoder:
         labels = []
         for target in target_values:
              labels.append(self.get_label(target, key))
-        return labels
+        return np.array(labels)
 
     def get_label(self, target, key):
-        if '_' in self.prob_space[key]:
+        if '_' in key:
             label = [1 if round(target,2)==round(param,2) else 0 for param in self.prob_space[key]]
         else: 
             label = [1 if round(target,1)==round(param,1) else 0 for param in self.prob_space[key]]
         assert sum(label) >= 1, f"One-hot label sum smaller than one: {sum(label)}, target: {round(target,2)} \n prob_space = {np.round(self.prob_space[key],2)}"
         assert sum(label) <= 1, f"One-hot label sum larger than one: {sum(label)}, target: {round(target,2)} \n prob_space = {np.round(self.prob_space[key],2)}"
-        return label
+        return np.array(label)
     
     def coldbatch_maximum(self, labels, key):
         values = []
@@ -56,5 +52,5 @@ class LabelCoder:
         return value
 
     def get_value_avg(self, label, key):
-        value = sum(self.prob_space[key]*label)
+        value = np.sum(self.prob_space[key]*label)
         return value

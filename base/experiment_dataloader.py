@@ -7,17 +7,16 @@ import fabio
 import glob
 
 class Dataset:
-    def __init__(self, path, folder, file, fast_data, first_frame=None):
+    def __init__(self, path, folder, file, fast_data, first_frame=None, test=False):
         self.path = path
         self.folder = folder
         self.file = file
         self.fast_data = fast_data
         self.first_frame = None
-        self.sample = 10
+        self.sample = 10 if test else False
 
 
     def get_dataframe(self):
-        print(self.path + self.folder + "/" + self.file)
         targets_dataframe = pd.read_csv(self.path + self.folder + "/" + self.file)
         return targets_dataframe
 
@@ -31,14 +30,18 @@ class Dataset:
         dataframe = dataframe.dropna()
         dataframe = dataframe.reset_index(drop=True)
 
+        # set first frame
         if not self.first_frame:
             # set first frame to highest frame where thickness is less than 1.0 nm if first_frame not defined
             largest_thickness_smaller_one = max(dataframe[dataframe.thickness<1.0].index)
             self.first_frame = dataframe.Frame[largest_thickness_smaller_one]
-
         while dataframe.Frame[0] != self.first_frame:
             dataframe = dataframe.drop(index=0)
             dataframe = dataframe.reset_index(drop=True)
+        # set last frame
+        if True:
+            two_r_to_d_ratio_at_most_one = min(dataframe[(dataframe.Radius*2)/dataframe.Distance > 1.0].index)
+            dataframe = dataframe[:two_r_to_d_ratio_at_most_one]
         return dataframe[['Measurement', 'Frame', 'Distance', 'Radius', 'thickness']]
 
     def get_target_values(self):
@@ -47,7 +50,6 @@ class Dataset:
 
         target_values = self.get_dataframe()
         target_values = self.preprocess_dataframe(dataframe=target_values)
-        print(target_values)
         if self.sample:
             target_values = target_values[:10]
         return target_values
@@ -113,10 +115,10 @@ class Dataset:
 
 
 class Experiment:
-    def __init__(self, data_path, fast_exp):
+    def __init__(self, data_path, fast_exp=False, test=False):
         self.datasets = []
         for i in range(0, len(data_path['folders']), 1):
-            self.datasets.append(Dataset(path=data_path['path'], folder=data_path['folders'][i], file=data_path['target_value_files'][i], fast_data=fast_exp))
+            self.datasets.append(Dataset(path=data_path['path'], folder=data_path['folders'][i], file=data_path['target_value_files'][i], fast_data=fast_exp, test=test))
 
     def get_target_values(self):
         dataframes = []
@@ -140,9 +142,10 @@ class Experiment:
         return self.get_images(), self.get_target_values()
 
     def get_type(self, K, images, targets, sample=None):
-        filter_targets_by_K = targets.measurement=='sputter_'+K
-        targets_K = targets[filter_targets_by_K]
-        images_K = np.array(images)[filter_targets_by_K]
+        filtered_targets_by_K = targets.measurement=='sputter_'+K
+        targets_K = targets[filtered_targets_by_K]
+        images_K = np.array(images)[filtered_targets_by_K]
+        assert len(images_K)==len(targets_K)
         if sample:
             targets_K = targets_K.sample(n=sample)
             images_K = images_K[targets_K.index]

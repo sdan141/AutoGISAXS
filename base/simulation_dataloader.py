@@ -6,27 +6,32 @@ import pandas as pd
 import math
 from base.simulation_dataloaders import FactorDatabase, ReadyDatabase, FactorFile
 
-# intervals for trainning scope
-intervals = {
+# intervals for trainning scope (for simulations)
+training_interval = {
     'radius':
             {'all': {'start': 0.5, 'stop': 7.6, 'step': 0.1}, 'low': {'start': 0.5, 'stop': 4.6, 'step': 0.1}, 'medium': {'start': 1.5, 'stop': 5.6, 'step': 0.1},
-             'high': {'start': 2.5, 'stop': 7.6, 'step': 0.1}, 'stepsize': {'start': 1.0, 'stop': 8.0, 'step': 1.0}, 'costume':{'start': 1.2, 'stop': 7.6, 'step': 0.1}},
+                'high': {'start': 2.5, 'stop': 7.6, 'step': 0.1}, 'stepsize': {'start': 1.0, 'stop': 8.0, 'step': 1.0}, 'costume':{'start': 1.2, 'stop': 7.6, 'step': 0.1},
+                'test':{'start': 2.5, 'stop': 5.1, 'step': 0.1}},
     'distance':
             {'all': {'start': 0.5, 'stop': 7.6, 'step': 0.1}, 'low': {'start': 0.5, 'stop': 4.6, 'step': 0.1}, 'medium': {'start': 1.5, 'stop': 5.6, 'step': 0.1},
-             'high': {'start': 2.5, 'stop': 7.6, 'step': 0.1}, 'stepsize': {'start': 1.0, 'stop': 8.0, 'step': 1.0}, 'costume':{'start': 1.2, 'stop': 7.6, 'step': 0.1}},
+                'high': {'start': 2.5, 'stop': 7.6, 'step': 0.1}, 'stepsize': {'start': 3.0, 'stop': 16.0, 'step': 1.0}, 'costume':{'start': 3.8, 'stop': 15.1, 'step': 0.1},
+                'test':{'start': 10.0, 'stop': 10.2, 'step': 0.1}},
     'sigma_radius':
             {'all': {'start': 0.1, 'stop': 0.51, 'step': 0.01}, 'low': {'start': 0.1, 'stop': 0.25, 'step': 0.01}, 'medium': {'start': 0.18, 'stop': 0.33, 'step': 0.01},
-             'high': {'start': 0.33, 'stop': 0.51, 'step': 0.01}, 'stepsize': {'start': 0.1, 'stop': 0.51, 'step': 0.1}, 'costume': {'start': 0.15, 'stop': 0.31, 'step': 0.05}},
+                'high': {'start': 0.33, 'stop': 0.51, 'step': 0.01}, 'stepsize': {'start': 0.1, 'stop': 0.51, 'step': 0.1}, 'costume': {'start': 0.1, 'stop': 0.35, 'step': 0.05},
+                'test':{'start': 0.2, 'stop': 0.21, 'step': 0.01}},
     'omega_distance':
             {'all': {'start': 0.1, 'stop': 0.51, 'step': 0.01}, 'low': {'start': 0.1, 'stop': 0.25, 'step': 0.01}, 'medium': {'start': 0.18, 'stop': 0.33, 'step': 0.01},
-             'high': {'start': 0.33, 'stop': 0.51, 'step': 0.01}, 'stepsize': {'start': 0.1, 'stop': 0.51, 'step': 0.1}, 'costume': {'start': 0.18, 'stop': 0.28, 'step': 0.01}}}
+                'high': {'start': 0.33, 'stop': 0.51, 'step': 0.01}, 'stepsize': {'start': 0.1, 'stop': 0.51, 'step': 0.1}, 'costume': {'start': 0.16, 'stop': 0.31, 'step': 0.01},
+                'test':{'start': 0.2, 'stop': 0.21, 'step': 0.01}}
+                }
 
 def Database(sim_source, path, file, id):
     if sim_source=='factors_h5':
         return FactorDatabase.FactorDatabase(path, file, id)
     elif sim_source=='ready_h5':
         return ReadyDatabase.ReadyDatabase(path, file, id)
-    elif sim_aource=='factors_file':
+    elif sim_source=='factors_file':
         return FactorFile.FactorFile(path, file, id)
     else:
         print('\nInvalid simulation source argument\n')
@@ -162,9 +167,6 @@ class Simulation:
                 sf_image = self.databases[value['id_sf']].get_structure(value['key_sf'])
                 ff_image = self.databases[value['id_ff']].get_mff1(value['key_ff'])
                 gisaxs = np.round(sf_image * ff_image, 5)
-                # if self.peak_omega:
-                #     if not self.is_valid_peak(gisaxs, value['distance']):
-                #         continue
                 targets.append(value)
                 images.append(gisaxs)
         target_values = pd.DataFrame(targets)
@@ -237,8 +239,9 @@ class Simulation:
             form_factor_target_values = form_factor_target_values[(form_factor_target_values.sigma_radius >= self.sigma_interval['start']) & \
                                                                             (form_factor_target_values.sigma_radius < self.sigma_interval['stop'])]
         else:
-            omega_interval = np.round(np.arange(*self.sigma_interval.values()),2)
+            sigma_interval = np.round(np.arange(*self.sigma_interval.values()),2)
             form_factor_target_values = form_factor_target_values[form_factor_target_values.round({'sigma_radius':2}).sigma_radius.isin(sigma_interval)]
+
         # sample data database
         if self.samples:
             structure_factor_target_values = structure_factor_target_values.sample(frac=self.samples).sort_values(by=['distance','omega_distance'])
@@ -266,9 +269,6 @@ class Simulation:
                 sf_image = self.databases[value['id_sf']].get_structure(value['key_sf'])
                 ff_image = self.databases[value['id_ff']].get_mff1(value['key_ff'])
                 gisaxs = np.round(sf_image * ff_image, 5)
-                # if self.peak_omega:
-                #     if not self.is_valid_peak(gisaxs, value['distance']):
-                #         continue
                 targets.append(value)
                 images.append(gisaxs)
         target_values = pd.DataFrame(targets)

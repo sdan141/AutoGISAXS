@@ -5,7 +5,8 @@ import argparse
 # mode
 TEST = True
 REAL = False
-RUN = '_256_30' # test description
+RUN = '_256_25' # test description
+CHECK = False
 
 # experiment parameters
 MATERIALS = 'AuSi'
@@ -32,19 +33,14 @@ VALIDATION = 'exp' # 'exp_reduced' # 'sim'
 
 # deep learning parameters
 NN = 'MLP' # 'CNN' #'CNN' # 'VGG' # 'DENSE'
-FLAG = 'radius' # 'distance' # 'all'
+FLAG = 'radius' # 'distance' # 'all' # 
 DISTRIBUTION = False
 
 ESTIMATION = 'naive' # naive confidence estimation #'cross_val' # Monte Carlo cross validation to obtain estimation -> only if validation data is same as for training
-LABELS_R = 200#280
-LABELS_D = 370
-LABELS_S = 200
-LABELS_W = 200
-
-# mode
-TEST = True
-REAL = False
-RUN = '_256_30' # test description
+LABELS_R = 270#200#
+LABELS_D = 300#370
+LABELS_S = 40
+LABELS_W = 40
 
 # experiment parameters
 MATERIALS = 'AuSi'
@@ -64,6 +60,8 @@ def initialize_argument_parser():
     parser.add_argument('--test', dest='test', type=bool, help='train and test the network', default=TEST)
     parser.add_argument('--real', dest='real', type=bool, help='train and execute the network on unlabeled data', default=REAL)
     parser.add_argument('--run', dest='run', type=str, help='identifier for the specific run', default=RUN)
+    parser.add_argument('--check', dest='check', type=bool, help='check the pipeline', default=CHECK)
+
 
     # experiment parameter
     parser.add_argument('--materials', dest='materials', type=str, help='considered materials', default=MATERIALS)

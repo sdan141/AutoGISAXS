@@ -4,16 +4,17 @@ import arguments
 from datetime import date
 from base import simulation_dataloader, experiment_dataloader, real_dataloader, detector, setup, data_augmentation
 from deep_learning import MLPnet#, CNNnet
+from base.simulation_dataloader import training_interval
 
 
 def intialize_algorithm(algorithm, input_shape, parameter, output_units):
     if algorithm == 'MLP':
         return MLPnet.MLP2(input_shape, parameter, output_units)
-    #elif algorithm == 'CNN'
+    elif algorithm == 'CNN':
+        pass
 
 if __name__ == '__main__':
 
-    print('here we start')
     # parse arguments
     arg = arguments.parse()
 
@@ -49,7 +50,6 @@ if __name__ == '__main__':
 
     # initialize detector
     DetectorClass = getattr(detector, arg.detector)
-    print(str(DetectorClass))
     detector = DetectorClass(mask=(path_project + '/base/masks/' + arg.maskfile))
 
     # initialize experiment setup
@@ -64,41 +64,29 @@ if __name__ == '__main__':
     output_units = {'radius': arg.radius_classes, 'distance':arg.distance_classes,
                  'omega':arg.omega_classes, 'sigma':arg.sigma_classes}
 
-    # intervals for trainning scope (for simulations)
-    intervals = {
-        'radius':
-                {'all': {'start': 0.5, 'stop': 7.6, 'step': 0.1}, 'low': {'start': 0.5, 'stop': 4.6, 'step': 0.1}, 'medium': {'start': 1.5, 'stop': 5.6, 'step': 0.1},
-                 'high': {'start': 2.5, 'stop': 7.6, 'step': 0.1}, 'stepsize': {'start': 1.0, 'stop': 8.0, 'step': 1.0}, 'costume':{'start': 1.2, 'stop': 7.6, 'step': 0.1},
-                 'test':{'start': 1.2, 'stop': 7.6, 'step': 0.1}},
-        'distance':
-                {'all': {'start': 0.5, 'stop': 7.6, 'step': 0.1}, 'low': {'start': 0.5, 'stop': 4.6, 'step': 0.1}, 'medium': {'start': 1.5, 'stop': 5.6, 'step': 0.1},
-                 'high': {'start': 2.5, 'stop': 7.6, 'step': 0.1}, 'stepsize': {'start': 1.0, 'stop': 8.0, 'step': 1.0}, 'costume':{'start': 1.2, 'stop': 7.6, 'step': 0.1},
-                 'test':{'start': 10.0, 'stop': 10.2, 'step': 0.1}},
-        'sigma_radius':
-                {'all': {'start': 0.1, 'stop': 0.51, 'step': 0.01}, 'low': {'start': 0.1, 'stop': 0.25, 'step': 0.01}, 'medium': {'start': 0.18, 'stop': 0.33, 'step': 0.01},
-                 'high': {'start': 0.33, 'stop': 0.51, 'step': 0.01}, 'stepsize': {'start': 0.1, 'stop': 0.51, 'step': 0.1}, 'costume': {'start': 0.15, 'stop': 0.31, 'step': 0.05},
-                 'test':{'start': 0.2, 'stop': 0.21, 'step': 0.01}},
-        'omega_distance':
-                {'all': {'start': 0.1, 'stop': 0.51, 'step': 0.01}, 'low': {'start': 0.1, 'stop': 0.25, 'step': 0.01}, 'medium': {'start': 0.18, 'stop': 0.33, 'step': 0.01},
-                 'high': {'start': 0.33, 'stop': 0.51, 'step': 0.01}, 'stepsize': {'start': 0.1, 'stop': 0.51, 'step': 0.1}, 'costume': {'start': 0.18, 'stop': 0.28, 'step': 0.01},
-                 'test':{'start': 0.2, 'stop': 0.21, 'step': 0.01}}
-                 }
-
-    chosen_intervals ={
-        'radius': intervals['radius']['all'],
-        'distance':  intervals['distance']['test'],
-        'sigma_radius': intervals['sigma_radius']['test'],
-        'omega_distance':  intervals['omega_distance']['test']}
+ 
+    if arg.check:
+        chosen_intervals ={
+            'radius': training_interval['radius']['test'],
+            'distance':  training_interval['distance']['test'],
+            'sigma_radius': training_interval['sigma_radius']['test'],
+            'omega_distance':  training_interval['omega_distance']['test']}
+    else:
+        chosen_intervals ={
+            'radius': training_interval['radius']['costume'],
+            'distance':  training_interval['distance']['costume'],
+            'sigma_radius': training_interval['sigma_radius']['costume'],
+            'omega_distance':  training_interval['omega_distance']['costume']}   
 
     # constrains for including simulations
-    constrains = {'fast_sim': arg.fast_sim, 'samples': 1}#, 'check': arg.check}
+    constrains = {'fast_sim': arg.fast_sim, 'samples': None, 'check': arg.check}
 
     # create simulation object with constrains
     simulation = simulation_dataloader.Simulation(path=path_simulation_data, sim_source=arg.sim_source,
                                                   constrains=constrains, intervals=chosen_intervals)
     if arg.test:
         # create experiment object
-        experiment = experiment_dataloader.Experiment(data_path=path_experiment_data, fast_exp=arg.fast_exp)
+        experiment = experiment_dataloader.Experiment(data_path=path_experiment_data, fast_exp=arg.fast_exp, test=arg.check)
         # fit experiment images
         if arg.fast_exp:
             # experiment images are already extracted from cbf files
@@ -113,9 +101,6 @@ if __name__ == '__main__':
     else:
         simulation_images, simulation_target_values = data_augmentation.fit_simulation(simulation=simulation)
 
-    print('# simulations:',len(simulation_images))
-    print(simulation_target_values)
-
     # set validation_data
     if arg.validation == 'exp':
         validation_data = experiment.get_type('400K', experiment_images, experiment_target_values, sample=None)
@@ -129,14 +114,14 @@ if __name__ == '__main__':
         validation_data = None
 
     deep_learning_parameter = {'algorithm': arg.algorithm, 'path': path_project, 'validation': arg.validation, 'estimation': arg.estimation,
-                               'morphology': arg.morphology, 'distribution': arg.distr, 'beta': arg.beta}
+                               'morphology': arg.morphology, 'distribution': arg.distr, 'beta': arg.beta, 'run':arg.run, 'check': arg.check}
 
     algorithm = intialize_algorithm(algorithm=arg.algorithm, input_shape=(simulation_images[0].shape + (1,)), parameter=deep_learning_parameter, output_units=output_units)
     algorithm.train_on_simulations(simulation_images, simulation_target_values, validation_data)
     # algorithm.train_on_experiments()
-    algorithm.test_on_experiment(experiment_images, experiment_target_values)
+    algorithm.test_on_experiment_in_batch(experiment_images, experiment_target_values)
     # algorithm.test_on_simulations()
-    algorithm.estimate_model()
+    algorithm.estimate_model(thresh=2)
 
     if arg.real:
         # create real object
