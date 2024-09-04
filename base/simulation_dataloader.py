@@ -15,7 +15,7 @@ training_interval = {
     'distance':
             {'all': {'start': 0.5, 'stop': 7.6, 'step': 0.1}, 'low': {'start': 0.5, 'stop': 4.6, 'step': 0.1}, 'medium': {'start': 1.5, 'stop': 5.6, 'step': 0.1},
                 'high': {'start': 2.5, 'stop': 7.6, 'step': 0.1}, 'stepsize': {'start': 3.0, 'stop': 16.0, 'step': 1.0}, 'costume':{'start': 3.8, 'stop': 15.1, 'step': 0.1},
-                'test':{'start': 10.0, 'stop': 10.2, 'step': 0.1}},
+                'test':{'start': 10.0, 'stop': 10.4, 'step': 0.1}},
     'sigma_radius':
             {'all': {'start': 0.1, 'stop': 0.51, 'step': 0.01}, 'low': {'start': 0.1, 'stop': 0.25, 'step': 0.01}, 'medium': {'start': 0.18, 'stop': 0.33, 'step': 0.01},
                 'high': {'start': 0.33, 'stop': 0.51, 'step': 0.01}, 'stepsize': {'start': 0.1, 'stop': 0.51, 'step': 0.1}, 'costume': {'start': 0.1, 'stop': 0.35, 'step': 0.05},
@@ -155,11 +155,9 @@ class Simulation:
                     targets = targets[~tar_index]
                     continue
                 value = {
-                   'id_sf': targets[sf_index][0],
-                   'id_ff': form_factor_target_values[ff_index][0],
-                   'key_sf': structure_factor_target_values[sf_index][1],          # key of sf
-                   'key_ff': form_factor_target_values[ff_index][1],               # key of ff
-                   'distance': structure_factor_target_values[sf_index][2],        # distance depends only on sf
+                   'id': targets[index][0],
+                   'key': targets[index][1],          
+                   'distance': targets[sf_index][2],        # distance depends only on sf
                    'omega_distance': structure_factor_target_values[sf_index][3],  # omega of distance depends only on sf
                    'radius': form_factor_target_values[ff_index][2],               # radius depends only on ff
                    'sigma_radius': form_factor_target_values[ff_index][3]          # sigma of radius depends only on ff
@@ -272,5 +270,8 @@ class Simulation:
                 targets.append(value)
                 images.append(gisaxs)
         target_values = pd.DataFrame(targets)
+        target_values = target_values.sort_values(by=['radius','distance','sigma_radius','omega_distance'])
+        images = np.array(images)[target_values.index] 
+        target_values.reset_index(drop=True, inplace=True)
 
         return images, target_values

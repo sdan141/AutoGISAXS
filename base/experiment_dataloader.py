@@ -20,7 +20,7 @@ class Dataset:
         targets_dataframe = pd.read_csv(self.path + self.folder + "/" + self.file)
         return targets_dataframe
 
-    def preprocess_dataframe(self, dataframe):
+    def preprocess_dataframe(self, dataframe, last_frame_mode='thickness'):
         # convert 'Frame' from float64 to int64
         dataframe['Frame'] = dataframe['Frame'].astype(int) + (260 if '300' in self.folder else 0) # need to modify the dataset eventually
         # keep relevant columns
@@ -39,9 +39,13 @@ class Dataset:
             dataframe = dataframe.drop(index=0)
             dataframe = dataframe.reset_index(drop=True)
         # set last frame
-        if True:
+        if last_frame_mode == 'cover':
             two_r_to_d_ratio_at_most_one = min(dataframe[(dataframe.Radius*2)/dataframe.Distance > 1.0].index)
             dataframe = dataframe[:two_r_to_d_ratio_at_most_one]
+        elif last_frame_mode == 'thickness': 
+            delta = 8.0
+            thickness_at_most_delta = min(dataframe[dataframe.thickness > delta].index)
+            dataframe = dataframe[:thickness_at_most_delta]
         return dataframe[['Measurement', 'Frame', 'Distance', 'Radius', 'thickness']]
 
     def get_target_values(self):

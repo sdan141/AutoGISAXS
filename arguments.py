@@ -4,9 +4,9 @@ import argparse
 
 # mode
 TEST = True
-REAL = False
+REAL = True
 RUN = '_256_25' # test description
-CHECK = False
+CHECK = True
 
 # experiment parameters
 MATERIALS = 'AuSi'
@@ -22,8 +22,11 @@ EXP_MASKFILE = 'Pilatus_1M.tif'
 # data preparation parameters
 PREMADE_SIM = False # simulations are generated in advance (loaded)
 PREMADE_EXP = False # experiments are prepared in advance (loaded)
+PREMADE_REAL = False # unlabeled experiments are prepared in advance (loaded)
+                     # usefull when using different detectors
+
 SIM_SOURCE = 'factors_h5'#'ready_file'
-BETA = 0.75
+BETA = 0.85
 
 # validation parameters
 VALIDATION = 'exp' # 'exp_reduced' # 'sim'
@@ -32,13 +35,13 @@ VALIDATION = 'exp' # 'exp_reduced' # 'sim'
 # sim using only simulations for validatio
 
 # deep learning parameters
-NN = 'MLP' # 'CNN' #'CNN' # 'VGG' # 'DENSE'
-FLAG = 'radius' # 'distance' # 'all' # 
+NN = 'MLP' #'CNN' #  'VGG' # 'DENSE'
+FLAG = 'radius' #'distance' #  'all' # 
 DISTRIBUTION = False
 
 ESTIMATION = 'naive' # naive confidence estimation #'cross_val' # Monte Carlo cross validation to obtain estimation -> only if validation data is same as for training
 LABELS_R = 270#200#
-LABELS_D = 300#370
+LABELS_D = 380#370
 LABELS_S = 40
 LABELS_W = 40
 
@@ -57,7 +60,7 @@ def initialize_argument_parser():
     """Common configuration for parsers"""
     parser = argparse.ArgumentParser()
     # modes
-    parser.add_argument('--test', dest='test', type=bool, help='train and test the network', default=TEST)
+    parser.add_argument('--test', dest='test', type=bool, help='train and test the network on labeled data', default=TEST)
     parser.add_argument('--real', dest='real', type=bool, help='train and execute the network on unlabeled data', default=REAL)
     parser.add_argument('--run', dest='run', type=str, help='identifier for the specific run', default=RUN)
     parser.add_argument('--check', dest='check', type=bool, help='check the pipeline', default=CHECK)
@@ -79,6 +82,7 @@ def initialize_argument_parser():
     # data preparation parameters
     parser.add_argument('--fast_sim', dest='fast_sim', type=bool, help='use simulations prepared in advance', default=PREMADE_SIM)
     parser.add_argument('--fast_exp', dest='fast_exp', type=bool, help='use experiment images prepared in advance', default=PREMADE_EXP)
+    parser.add_argument('--fast_real', dest='fast_real', type=bool, help='use unlabeled experiment images prepared in advance', default=PREMADE_REAL)
     parser.add_argument('--sim_source', dest='sim_source', type=str, help='select source of simulations data', choices=['factors_h5', 'factors_file', 'ready_h5', 'ready_file'], default=SIM_SOURCE)
     parser.add_argument('--beta', dest='beta', type=float, help='choose parameter for intensity thresholding', default=BETA)
 

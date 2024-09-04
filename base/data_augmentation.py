@@ -341,7 +341,36 @@ class DataAugmentation:
         return fitted_experiment_images, experiment_target_values
 
     def fit_real(self, real):
-        pass
+        # load data
+        real_images, files = real.get_images()
+        # start fitting
+        fitted_real_images = []
+        # shape to bin
+        shape_cropped_experiment = self.crop_experiment(image=real_images[0])
+        shape_to_bin = (int(math.ceil(0.5 * shape_cropped_experiment.shape[0])), int(math.ceil(0.5 * shape_cropped_experiment.shape[1])))
+        detector_mask = self.crop_detector_mask()
+        detector_mask = self.crop_window(self.bin_mask(detector_mask, bin_to_shape=shape_to_bin))
+        for image in real_images:
+            # crop
+            image = self.crop_experiment(image=image)
+            # bin
+            image = self.bin_float(to_bin=image, bin_to_shape=shape_to_bin)
+            # crop window
+            image = self.crop_window(image=image)
+            # median filter
+            if self.median: image = self.median_filter(image=image, median_smooth_factor=7)
+            # gradient filter
+            if self.gradient: image = self.gradient_filter(image=image)
+            # intensity and background thresholding
+            if self.beta != None: image = self.intensity_background_thresholding(image=image, beta=self.beta)
+            # crop module (rigion of interest cut)
+            if self.ROI != None: image = self.crop_roi(image=image, cut=self.ROI)
+            # mask
+            image = self.mask_image(image=image, mask=detector_mask)
+            # normalize
+            image = self.normalize(image=image)
+            fitted_real_images.append(image)
+        return fitted_real_images, files
 
     ####################################################
     # image processing functions - most will not be used

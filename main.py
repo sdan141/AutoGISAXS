@@ -3,7 +3,7 @@
 import arguments
 from datetime import date
 from base import simulation_dataloader, experiment_dataloader, real_dataloader, detector, setup, data_augmentation
-from deep_learning import MLPnet#, CNNnet
+from deep_learning import MLPnet, CNNnet
 from base.simulation_dataloader import training_interval
 
 
@@ -11,7 +11,7 @@ def intialize_algorithm(algorithm, input_shape, parameter, output_units):
     if algorithm == 'MLP':
         return MLPnet.MLP2(input_shape, parameter, output_units)
     elif algorithm == 'CNN':
-        pass
+        return CNNnet.CNN2(input_shape, parameter, output_units)
 
 if __name__ == '__main__':
 
@@ -27,7 +27,8 @@ if __name__ == '__main__':
                             'folders': ['sputter_100K', 'sputter_300K', 'sputter_400K', 'sputter_500K'],
                             'target_value_files': ['tar_100K.csv', 'tar_300K.csv', 'tar_400K.csv', 'tar_500K.csv']}#, 'first_frame': [190, 190]}
     
-    path_real_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/experiment/unlabeled/'}
+    path_real_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/simple_net/experiment/sputter/sputter_500K/'}
+    # path_real_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/experiment/unlabeled/'}
 
     # path_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/sputter/',
     #                         'folders': ['sputter_100K', 'sputter_300K', 'sputter_400K', 'sputter_500K'],
@@ -106,37 +107,33 @@ if __name__ == '__main__':
         validation_data = experiment.get_type('400K', experiment_images, experiment_target_values, sample=None)
     elif arg.validation == 'exp_reduced':
         validation_data = experiment.get_type('400K', experiment_images, experiment_target_values, sample=25)
-    elif arg.validation == 'sim':
-        validation_data = 'sim'
-    elif arg.validation == 'other':
-        validation_data = path_other_validation_data
-    else:
-        validation_data = None
+    # elif arg.validation == 'sim':
+    #     validation_data = 'sim'
+    # elif arg.validation == 'other':
+    #     validation_data = path_other_validation_data
+    # else:
+    #     validation_data = None
 
     deep_learning_parameter = {'algorithm': arg.algorithm, 'path': path_project, 'validation': arg.validation, 'estimation': arg.estimation,
                                'morphology': arg.morphology, 'distribution': arg.distr, 'beta': arg.beta, 'run':arg.run, 'check': arg.check}
 
     algorithm = intialize_algorithm(algorithm=arg.algorithm, input_shape=(simulation_images[0].shape + (1,)), parameter=deep_learning_parameter, output_units=output_units)
-    algorithm.train_on_simulations(simulation_images, simulation_target_values, validation_data)
-    # algorithm.train_on_experiments()
-    algorithm.test_on_experiment_in_batch(experiment_images, experiment_target_values)
-    # algorithm.test_on_simulations()
-    algorithm.estimate_model(thresh=2)
+    if 'exp' in arg.validation:
+        algorithm.train_on_simulations_validate_with_experiment(simulation_images, simulation_target_values, validation_data)
+    else:
+        algorithm.train_on_simulations_validate_with_simulations(simulation_images, simulation_target_values)
+    
+    if arg.test:
+        algorithm.test_on_experiment_in_batch(experiment_images, experiment_target_values)
+        # algorithm.test_on_simulations()
+        algorithm.estimate_model(thresh=2)
 
     if arg.real:
         # create real object
-        real = real_dataloader.Experiment(data_path=path_unlabeled_experiment_data, fast_real=arg.fast_real)
-        #algorithm.test_real()
+        real = real_dataloader.Experiment(data_path=path_real_experiment_data, fast_real=arg.fast_real)
+        # fit experiment images
+        real_images, files = data_augmentation.fit_real(real=real)
         # initialize algorithm
-        algorithm = intialize_algorithm(algorithm=arg.algorithm, input_shape=(real_images[0].shape + (1,)), parameter=deep_learning_parameter)
+        #algorithm = intialize_algorithm(algorithm=arg.algorithm, input_shape=(real_images[0].shape + (1,)), parameter=deep_learning_parameter)
         # predict parameter
-        algorithm.real(images=real_images, files=files)
-
-    # if arg.estimation == 'naive':
-    #     for i in range(MAX_ROUNDS)
-    #         algorithm = algorithm.initialize_algorithm(arg.algorithm, input_shape=(simulation_images[0].shape + (1,)), deep_learning_parameters, , )
-    #         algorithm.train_on_simulations(simulation_images, simulation_target_values, validation_data)
-    #         algorithm.test
-
-
-    # maybe just one execution each time!!! arg.morphology ::= 'radius'| 'distance' | 'all' | 'radius_sigma' | 'distance_omega'
+        algorithm.test_on_real(images=real_images, files=files)
