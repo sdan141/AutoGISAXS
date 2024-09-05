@@ -119,7 +119,7 @@ class AlgorithmBase:
                     var.assign(initializer(var.shape, var.dtype))
                     #use the initializer
 
-    def create_inumpyut_tensor(self, images):
+    def create_input_tensor(self, images):
         if type(images) is not list:
             images = list(images)
         # reshape x to (len(images), height, width, 1)
@@ -137,7 +137,7 @@ class AlgorithmBase:
     def set_validation_data(self, validation_data):
         if 'exp' in self.parameter['validation']:
             images_validation, targets_validation = validation_data
-            images_validation = self.create_inumpyut_tensor(images_validation)
+            images_validation = self.create_input_tensor(images_validation)
             if '_' not in '\t'.join(self.keys):
                 self.keys_validation = self.keys
                 labels_validation = self.generate_labels(targets_validation)
@@ -162,8 +162,8 @@ class AlgorithmBase:
         # set_validation_data
         images_validation, targets_validation, labels_validation = self.set_validation_data(validation_data)
         # convert simulation images to tensor
-        images_train = self.create_inumpyut_tensor(images_train)
-        images_test = self.create_inumpyut_tensor(images_test)
+        images_train = self.create_input_tensor(images_train)
+        images_test = self.create_input_tensor(images_test)
         # set optimizer
         opt = optimizers.Adam(learning_rate = 0.0001, decay = 1e-6)
         # get training labels (one-hot vectors/ matrices)
@@ -241,9 +241,9 @@ class AlgorithmBase:
             x_train = x_train[train_validation_splits[0][0]]
             x_validation = x_train[train_validation_splits[0][1]]
             # convert training, test& validation simulation images to tensor
-            x_train = self.create_inumpyut_tensor(x_train)
-            x_test = self.create_inumpyut_tensor(x_test)
-            x_validation = self.create_inumpyut_tensor(x_validation)
+            x_train = self.create_input_tensor(x_train)
+            x_test = self.create_input_tensor(x_test)
+            x_validation = self.create_input_tensor(x_validation)
             # extract training and validation simulation targets
             y_validation = y_train.loc[train_validation_splits[0][1]].reset_index(drop=True)
             y_train = y_train.loc[train_validation_splits[0][0]].reset_index(drop=True)
@@ -285,7 +285,7 @@ class AlgorithmBase:
         # set_validation_data
         #images_validation, targets_validation = self.set_validation_data(validation_data)
         # convert simulation images and validation images to tensor
-        images = self.create_inumpyut_tensor(images)
+        images = self.create_input_tensor(images)
         # set optimizer
         opt = optimizers.Adam(learning_rate = 0.0001, decay = 1e-6)
         # get training and validation labels (one-hot vectors/ matrices)
@@ -423,7 +423,7 @@ class AlgorithmBase:
 
     def test_on_experiment(self, images, target_values):
         # preprocess image shape
-        images = self.create_inumpyut_tensor(images)
+        images = self.create_input_tensor(images)
         if self.model_compiled and self.model_path:
             #model_scores = []
             for i in range(MAX_VALIDATION_ROUND):
@@ -444,7 +444,7 @@ class AlgorithmBase:
             filtered_targets_by_measurement = target_values.measurement == measurement
             experiment_targets = target_values[filtered_targets_by_measurement]
             experiment_images = numpy.array(images)[filtered_targets_by_measurement]
-            experiment_images = self.create_inumpyut_tensor(experiment_images)
+            experiment_images = self.create_input_tensor(experiment_images)
             if self.model_compiled and self.model_path:
                 model_scores[measurement] = []
                 for i in range(MAX_VALIDATION_ROUND):
