@@ -14,7 +14,9 @@ from base import utilities, data_augmentation, detector, experiment_dataloader, 
 from statistics import mean
 PATH = '/Users/eldaralmamedov/Desktop/Masterarbeit/AutoGiSAXS/results/'
 
-
+            # draw training history plot
+            #self.plot_model_accurarcy_and_loss(history=history.history, model_path=self.model_path + "/round_" + str(i))
+            
 def visualize_data(dataset):
     # Seaborn is a Python data visualization library based on matplotlib. It provides a high-level interface
     # for drawing attractive and informative statistical graphics.
