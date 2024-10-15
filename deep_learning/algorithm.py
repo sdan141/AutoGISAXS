@@ -10,6 +10,7 @@ from deep_learning import label_coder
 from glob import glob
 import re
 from datetime import date
+from .costume_loss import monotonic_categorical_crossentropy, monotonic_mse, monotonic_kl_divergence
 
 
 MAX_VALIDATION_ROUND = 2
@@ -131,7 +132,11 @@ class AlgorithmBase:
         if not keys: keys = self.keys
         for key in keys:
             # NOTE: label_coder should return numpy arrays!
-            labels[key] = self.label_coder.create_labels(target_values[key], key)
+            if self.label_coder.mode != "one-hot":
+                dist_key = next((dist for dist in target_values if "_" + key in dist), None)
+                sigmas = target_values[dist_key] if dist_key else None
+            else: sigmas = None
+            labels[key] = self.label_coder.create_labels(target_values[key], key, sigmas)
         return labels
     
     def set_validation_data(self, validation_data):
@@ -151,32 +156,54 @@ class AlgorithmBase:
         return images_validation, targets_validation, labels_validation
     
     def train_on_simulations_validate_with_experiment(self, images, target_values, validation_data):
+
         # split simulation data to training and test
         train_test_splits = generate_ordered_train_test_indices(X=images, max_splits=1)
         images = numpy.array(images)
         images_train = images[train_test_splits[0][0].astype(int)]
         images_test = images[train_test_splits[0][1].astype(int)]
+
         # extract training and test simulation targets
         target_values_train = target_values.loc[train_test_splits[0][0]].reset_index(drop=True)
         target_values_test = target_values.loc[train_test_splits[0][1]].reset_index(drop=True)        
+        target_values_test.to_csv(self.model_path + '/' + 'simulation_test_targets.csv')
+
         # set_validation_data
         images_validation, targets_validation, labels_validation = self.set_validation_data(validation_data)
+
         # convert simulation images to tensor
         images_train = self.create_input_tensor(images_train)
         images_test = self.create_input_tensor(images_test)
+
         # set optimizer
-        opt = optimizers.Adam(learning_rate = 0.0001, decay = 1e-6)
+        opt = optimizers.Adam(learning_rate = 0.0001)#, weight_decay = 1e-6)
+
         # get training labels (one-hot vectors/ matrices)
         labels_training = self.generate_labels(target_values_train)
+        print(next(iter(labels_training.values()))[0][0])
         # convert dictionary labels to list of lists
         labels_training_list = [numpy.array(labels_training[k]) for k in labels_training]
+        labels_training_list = [numpy.array(labels_training[k]) for k in labels_training]
+        print('example label:', labels_training_list[0][4])
+
         # compile the model
-        loss = [losses.MeanSquaredError(),losses.MeanSquaredError()]#[losses.MeanAbsoluteError(),losses.MeanAbsoluteError()]
+        if self.parameter['loss']=='mse':
+            loss = [losses.MeanSquaredError(),losses.MeanSquaredError()]
+        elif self.parameter['loss']=='monotonic_mse':
+            loss = [monotonic_mse]
+        elif self.parameter['loss']=='cce':
+            loss = [losses.CategoricalCrossentropy(label_smoothing=0.1)]
+        elif self.parameter['loss']=='monotonic_cce':
+            print("loss:", {self.parameter['loss']})
+            loss = [monotonic_categorical_crossentropy]
+        else:
+            loss = [losses.KLDivergence()]#[monotonic_mse]#[monotonic_kl_divergence]#[losses.CategoricalCrossentropy(label_smoothing=0.1)]#[monotonic_categorical_crossentropy]#[losses.KLDivergence()]#[losses.MeanSquaredError(),losses.MeanSquaredError()]#[losses.MeanAbsoluteError(),losses.MeanAbsoluteError()]
         metric = [metrics.MeanSquaredError(), metrics.RootMeanSquaredError()]
         self.model.compile(optimizer=opt, loss=loss[:len(self.keys)], metrics=metric[:len(self.keys)])#,'accuracy'])
         self.model_compiled = True
         print(self.model.summary())
-        # strart iteration
+
+        # start iteration
         # repeat training to derive estimation for the model accuracy
         model_scores = []
         num_epochs = 2 if self.check else 25
@@ -185,23 +212,29 @@ class AlgorithmBase:
             checkpoint_filepath = self.model_path + "/round_" + str(i) + "/weights_epoch-{epoch:02d}.weights.h5"
             h5_logger_callback = callbacks.ModelCheckpoint(filepath=checkpoint_filepath, monitor='accuracy', save_weights_only=True, mode='max')
             csv_logger_callback = callbacks.CSVLogger(filename=self.model_path + '/round_' + str(i) + '_history.csv')
+
             # train the model
             history = self.model.fit(x=images_train, y=labels_training_list, callbacks=[h5_logger_callback, csv_logger_callback], epochs=num_epochs, batch_size=256, shuffle=False)
+            
             # obtain optimal number of epoch for the model, save scores to csv, load weights back to the model, delete weights
             print('finished training')
             model_score = self.update_model_with_optimal_parameters(images_validation=images_validation, targets_validation=targets_validation, model_path=self.model_path + "/round_" + str(i))
             # and register the model score
             model_scores.append(model_score)
+            
             # save predictions of validation data from the best model wrt expected MSE
             labels_validation_prediction = self.model.predict(images_validation)
             targets_validation_prediction = self.get_numerical_prediction(labels_validation_prediction)
             self.save_experiment_prediction(target_values_true=targets_validation, target_values_prediction=targets_validation_prediction, data='validation', model_path=self.model_path + "/round_" + str(i))
+            
             # save predictions of validation labels
             self.save_raw_prediction(raw_labels=labels_validation_prediction, model_path=self.model_path + "/round_" + str(i), data='validation')
+            
             # prediction of test data
             labels_test_prediction = self.model.predict(images_test)
             targets_test_prediction = self.get_numerical_prediction(labels_test_prediction)
             self.save_prediction(target_values_true=target_values_test, target_values_prediction=targets_test_prediction, data='test_sim', model_path=self.model_path + "/round_" + str(i))
+            
             # save predictions of test labels
             self.save_raw_prediction(raw_labels=labels_test_prediction, model_path=self.model_path + "/round_" + str(i), data='test_sim')
 
@@ -216,7 +249,7 @@ class AlgorithmBase:
         # get indices to split data to training and test
         train_test_splits = generate_ordered_train_test_indices(X=images)
         # set optimizer
-        opt = optimizers.Adam(learning_rate = 0.0001, decay = 1e-6)
+        opt = optimizers.Adam(learning_rate = 0.0001, weight_decay = 1e-6)
         # compile the model
         loss = [losses.MeanSquaredError(),losses.MeanSquaredError()]#[losses.MeanAbsoluteError(),losses.MeanAbsoluteError()]
         metric = [metrics.MeanSquaredError(), metrics.RootMeanSquaredError()]
@@ -227,7 +260,7 @@ class AlgorithmBase:
         # repeat training to derive estimation for the model accuracy
         images = numpy.array(images)
         model_scores = []
-        num_epochs = 2 if self.check else 25
+        num_epochs = 2 if self.check else 50
         for i in range(MAX_VALIDATION_ROUND):
             # convert training and test simulation images to tensor
             x_train = images[train_test_splits[i][0].astype(int)]
@@ -354,7 +387,7 @@ class AlgorithmBase:
         model.save(model_path + "/model.keras") 
 
     def save_raw_prediction(self, raw_labels, model_path, data):
-        path_raw_data = model_path + '/raw_labels_' + data + '_data.numpyz'
+        path_raw_data = model_path + '/raw_labels_' + data + '_data.npz'
         numpy.savez(path_raw_data, **{key: raw_labels[i] for i, key in enumerate(self.keys)})
 
     def save_prediction(self, target_values_true, target_values_prediction, model_path, data):
@@ -369,6 +402,10 @@ class AlgorithmBase:
     def record_model_scores(self, model_scores, data):
         df_model_scores = pandas.DataFrame(model_scores) # for saving the model scores
         df_model_scores.to_csv(self.model_path + '/model_scores.csv')
+
+
+        # get model with lowest expected MSE value
+        # iterate all rounds and delete weights except for best model
         
         # run_parameters = pandas.DataFrame([data], columns=['col1', 'col2', 'col3'])
         # if os.path.exists(self.record_file):
@@ -463,6 +500,12 @@ class AlgorithmBase:
         df.to_csv(self.model_path + '/model_scores.csv', index=False)            
         # estimate network reproducibility based on trained models
         # self.record_model_scores(model_scores, data='test')
+        best_id = df.idxmin()['expected_MSE']
+        weight_files = glob(self.model_path+"/round_*/weights_*-*.h5")
+        weight_files = sorted(weight_files)
+        for f in weight_files:
+            if weight_files[best_id] not in f:
+                os.remove(f)
 
     def test_on_real(self, images, files):
         # preprocess image shape
@@ -491,7 +534,6 @@ class AlgorithmBase:
         for i, key in enumerate(self.keys):
             targets_prediction_max[key] = self.label_coder.coldbatch_maximum(labels_prediction[i].copy(), key)
             targets_prediction_avg[key] = self.label_coder.coldbatch_average(labels_prediction[i], key)
-
         return targets_prediction_max, targets_prediction_avg
         # targets_prediction = dict.fromkeys(self.keys, [])
         # for i, key in enumerate(self.keys):
@@ -512,11 +554,13 @@ class AlgorithmBase:
             mse_values = []
             for i, key in enumerate(keys):
                 mse_values.append(self.get_MSE(values[key], targets[key]))
+            
             return sum(mse_values)/len(keys)
         else:
             return numpy.square(numpy.subtract(numpy.array(values), numpy.array(targets))).mean()
         
     def get_relative_accuracy(self, values, targets, thresh=2, keys=None):
+        # 
         keys = self.keys_validation if 'exp' in self.parameter['validation'] else self.keys
         if isinstance(values, dict):
             acc_true = 0
@@ -524,7 +568,7 @@ class AlgorithmBase:
                 acc_true += self.get_relative_accuracy(values[key], targets[key])
             return acc_true/len(keys)
         else:
-            return sum([1 for i in range(len(keys)) if values[i]-thresh <= targets[i] <= values[i]+thresh])/len(targets)     
+            return sum([1 for i in range(len(values)) if values[i]-thresh <= targets[i] <= values[i]+thresh])/len(targets)     
 
     def save_experiment_prediction(self, target_values_true, target_values_prediction, data, model_path):
         self.keys_validation = [key for key in self.keys if '_' not in key]

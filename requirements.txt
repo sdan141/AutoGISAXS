@@ -4,3 +4,4 @@ pandas
 fabio
 tensorflow
 scikit-image
+yaml

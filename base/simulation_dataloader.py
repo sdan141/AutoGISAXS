@@ -1,10 +1,9 @@
 # courtesy of E. Almamedov with modifications for our purposes
 
 import numpy as np
-import h5py
 import pandas as pd
-import math
 from base.simulation_dataloaders import FactorDatabase, ReadyDatabase, FactorFile
+from base import utilities
 
 # intervals for trainning scope (for simulations)
 training_interval = {
@@ -14,12 +13,12 @@ training_interval = {
                 'test':{'start': 2.5, 'stop': 5.1, 'step': 0.1}},
     'distance':
             {'all': {'start': 0.5, 'stop': 7.6, 'step': 0.1}, 'low': {'start': 0.5, 'stop': 4.6, 'step': 0.1}, 'medium': {'start': 1.5, 'stop': 5.6, 'step': 0.1},
-                'high': {'start': 2.5, 'stop': 7.6, 'step': 0.1}, 'stepsize': {'start': 3.0, 'stop': 16.0, 'step': 1.0}, 'costume':{'start': 3.8, 'stop': 15.1, 'step': 0.1},
+                'high': {'start': 2.5, 'stop': 7.6, 'step': 0.1}, 'stepsize': {'start': 3.0, 'stop': 16.0, 'step': 1.0}, 'costume':{'start': 6.0, 'stop': 15.1, 'step': 0.1},
                 'test':{'start': 10.0, 'stop': 10.4, 'step': 0.1}},
     'sigma_radius':
             {'all': {'start': 0.1, 'stop': 0.51, 'step': 0.01}, 'low': {'start': 0.1, 'stop': 0.25, 'step': 0.01}, 'medium': {'start': 0.18, 'stop': 0.33, 'step': 0.01},
                 'high': {'start': 0.33, 'stop': 0.51, 'step': 0.01}, 'stepsize': {'start': 0.1, 'stop': 0.51, 'step': 0.1}, 'costume': {'start': 0.1, 'stop': 0.35, 'step': 0.05},
-                'test':{'start': 0.2, 'stop': 0.21, 'step': 0.01}},
+                'test':{'start': 0.3, 'stop': 0.31, 'step': 0.01}},
     'omega_distance':
             {'all': {'start': 0.1, 'stop': 0.51, 'step': 0.01}, 'low': {'start': 0.1, 'stop': 0.25, 'step': 0.01}, 'medium': {'start': 0.18, 'stop': 0.33, 'step': 0.01},
                 'high': {'start': 0.33, 'stop': 0.51, 'step': 0.01}, 'stepsize': {'start': 0.1, 'stop': 0.51, 'step': 0.1}, 'costume': {'start': 0.16, 'stop': 0.31, 'step': 0.01},
@@ -52,6 +51,7 @@ class Simulation:
         self.percolation_thresh = True # bool if to constraint percolation threshold 1/2 <= 2R/D <= 1
         self.valid_peak = True#constraint['peak'] # bool if to constrain the distance spreading D ~ 2pi/q_o
         self.sim_source = sim_source
+        #utilities.record_simulation_parameters(self)
 
 
     def get_databases(self):

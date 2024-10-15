@@ -4,9 +4,9 @@ import argparse
 
 # mode
 TEST = True
-REAL = True
+REAL = False
 RUN = '_256_25' # test description
-CHECK = True
+CHECK = False
 
 # experiment parameters
 MATERIALS = 'AuSi'
@@ -26,7 +26,7 @@ PREMADE_REAL = False # unlabeled experiments are prepared in advance (loaded)
                      # usefull when using different detectors
 
 SIM_SOURCE = 'factors_h5'#'ready_file'
-BETA = 0.85
+BETA = 0.75
 
 # validation parameters
 VALIDATION = 'exp' # 'exp_reduced' # 'sim'
@@ -38,7 +38,7 @@ VALIDATION = 'exp' # 'exp_reduced' # 'sim'
 NN = 'MLP' #'CNN' #  'VGG' # 'DENSE'
 FLAG = 'radius' #'distance' #  'all' # 
 DISTRIBUTION = False
-
+LOSS = ''#'monotonic_cce'#'cce'#'monotonic_mse'#'mse'#
 ESTIMATION = 'naive' # naive confidence estimation #'cross_val' # Monte Carlo cross validation to obtain estimation -> only if validation data is same as for training
 LABELS_R = 270#200#
 LABELS_D = 380#370
@@ -92,7 +92,7 @@ def initialize_argument_parser():
     parser.add_argument('--algorithm', dest='algorithm', type=str, help='select deep learning algorithm', choices=['CNN', 'MLP', 'VGG', 'Dense'], default=NN)
     parser.add_argument('--morph', dest='morphology', type=str, help='select morphological parameter to predict', choices=['all', 'radius', 'distance'], default=FLAG)
     parser.add_argument('--distr', dest='distr', type=bool, help='predict variance', default=DISTRIBUTION)
-
+    parser.add_argument('--loss', dest='loss', type=str, help='select loss function for training', choices=['mse', 'monotonic_mse', 'cce', 'monotonic_cce'], default=LOSS)
     parser.add_argument('--estimation', dest='estimation', type=str, help='select confidence estimation methode, keep in mind "cross_validation" suitable only when simulations are used as validation data',
                                                                      choices=['naive', 'cross_validation', 'none'], default=ESTIMATION)
     parser.add_argument('--radius_classes', dest='radius_classes', type=int, help='number of possible classes for radius', default=LABELS_R)

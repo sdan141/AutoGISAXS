@@ -2,7 +2,7 @@
 
 import arguments
 from datetime import date
-from base import simulation_dataloader, experiment_dataloader, real_dataloader, detector, setup, data_augmentation
+from base import simulation_dataloader, experiment_dataloader, real_dataloader, detector, setup, data_augmentation, utilities
 from deep_learning import MLPnet, CNNnet
 from base.simulation_dataloader import training_interval
 
@@ -19,20 +19,20 @@ if __name__ == '__main__':
     arg = arguments.parse()
 
     # set paths
-    path_project = '/home/danshach/pot_store/beegfs_scratch/Xalantir' # necessary when working on the cluster
+    path_project = '/home/danshach/pot_store/gpfs_scratch/Xalantir' # necessary when working on the cluster
 
-    path_simulation = '/home/danshach/pot_store/beegfs_scratch/Xalantir/data/simulation/'
+    path_simulation = '/home/danshach/pot_store/gpfs_scratch/Xalantir/data/simulation/'
 
     path_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/simple_net/experiment/sputter/',
                             'folders': ['sputter_100K', 'sputter_300K', 'sputter_400K', 'sputter_500K'],
-                            'target_value_files': ['tar_100K.csv', 'tar_300K.csv', 'tar_400K.csv', 'tar_500K.csv']}#, 'first_frame': [190, 190]}
+                            'target_value_files': ['tar_100K.csv', 'tar_300K.csv', 'tar_400K.csv', 'tar_500K.csv']}
     
     path_real_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/simple_net/experiment/sputter/sputter_500K/'}
     # path_real_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/experiment/unlabeled/'}
 
     # path_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/sputter/',
     #                         'folders': ['sputter_100K', 'sputter_300K', 'sputter_400K', 'sputter_500K'],
-    #                         'target_value_files': ['tar_100K.csv', 'tar_300K.csv', 'tar_400K.csv', 'tar_00K.csv']}#, 'first_frame': [190, 190]}
+    #                         'target_value_files': ['tar_100K.csv', 'tar_300K.csv', 'tar_400K.csv', 'tar_00K.csv']}
 
     # path_unlabeled_experiment_data = {'path': '/home/danshach/pot_store/beegfs_scratch/unlabeled/'}
     path_other_validation = '/home/danshach/pot_store/beegfs_scratch/dependencies/validation_data'
@@ -44,7 +44,7 @@ if __name__ == '__main__':
     # hdf5 databases with simulated GISAXS patterns
     if arg.sim_source=='ready_h5':
         path_simulation_data = {'path': path_simulation, 'files': ['database_ready.h5']}
-    # databases on files with simulated form and structure factors
+    # databases on files with simulated form and structure factors ### faster loading
     if arg.sim_source=='factors_file':
         path_simulation_data = {'path': path_simulation, 'files':[{'image_files': ['isGISAXS_database_sim.npz'],
                                                          'target_value_files': ['structure_factor_target_values.csv', 'form_factor_target_values.csv']}]}
@@ -76,7 +76,7 @@ if __name__ == '__main__':
         chosen_intervals ={
             'radius': training_interval['radius']['costume'],
             'distance':  training_interval['distance']['costume'],
-            'sigma_radius': training_interval['sigma_radius']['costume'],
+            'sigma_radius': training_interval['sigma_radius']['test'],
             'omega_distance':  training_interval['omega_distance']['costume']}   
 
     # constrains for including simulations
@@ -85,6 +85,7 @@ if __name__ == '__main__':
     # create simulation object with constrains
     simulation = simulation_dataloader.Simulation(path=path_simulation_data, sim_source=arg.sim_source,
                                                   constrains=constrains, intervals=chosen_intervals)
+    #utilities.record_simulation_parameters
     if arg.test:
         # create experiment object
         experiment = experiment_dataloader.Experiment(data_path=path_experiment_data, fast_exp=arg.fast_exp, test=arg.check)
@@ -115,8 +116,7 @@ if __name__ == '__main__':
     #     validation_data = None
 
     deep_learning_parameter = {'algorithm': arg.algorithm, 'path': path_project, 'validation': arg.validation, 'estimation': arg.estimation,
-                               'morphology': arg.morphology, 'distribution': arg.distr, 'beta': arg.beta, 'run':arg.run, 'check': arg.check}
-
+                               'morphology': arg.morphology, 'distribution': arg.distr, 'beta': arg.beta, 'run':arg.run, 'check': arg.check, 'loss':arg.loss}
     algorithm = intialize_algorithm(algorithm=arg.algorithm, input_shape=(simulation_images[0].shape + (1,)), parameter=deep_learning_parameter, output_units=output_units)
     if 'exp' in arg.validation:
         algorithm.train_on_simulations_validate_with_experiment(simulation_images, simulation_target_values, validation_data)
@@ -137,3 +137,9 @@ if __name__ == '__main__':
         #algorithm = intialize_algorithm(algorithm=arg.algorithm, input_shape=(real_images[0].shape + (1,)), parameter=deep_learning_parameter)
         # predict parameter
         algorithm.test_on_real(images=real_images, files=files)
+
+    utilities.record_run_parameters(run_path=algorithm.model_path, morphology=algorithm.keys, training_scope=chosen_intervals, 
+                                    augmentation=data_augmentation, model=algorithm.TYPE, labels=algorithm.label_coder.mode, 
+                                    validation=arg.validation, estimation=arg.estimation, n_training=len(simulation_images), 
+                                    n_batchs_and_epochs=arg.run, output_units=output_units, loss=arg.loss, learning_rate=algorithm.model.optimizer.learning_rate,
+                                    decay=algorithm.model.optimizer.weight_decay)

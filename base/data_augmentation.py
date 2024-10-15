@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import math
 from skimage import morphology, segmentation, filters, util, transform
+from base import utilities
 
 class DataAugmentation:
 
@@ -17,6 +18,8 @@ class DataAugmentation:
         self.gradient = False
         self.tau = None     # global intensity threshold
         self.gamma = None   # global background level
+        #utilities.record_preprocessing_parameters(self)
+
 
     ####################################################
     # functions for simuation-experiment domain adaption
@@ -239,6 +242,8 @@ class DataAugmentation:
         fitted_images = []
         # load data
         images, targets = simulation.load_data()
+        print(f"start fitting with {len(images)} raw simulations")
+
         # start fitting
         n1, n2, two_theta_f_min, two_theta_f_max, alpha_f_min, alpha_f_max = simulation.get_grid_parameter(key='1')
         two_theta_f, alpha_f, q_y, q_z = self.convert_from_cartesian_to_reciprocal_space()
@@ -249,9 +254,10 @@ class DataAugmentation:
         shape_to_bin = (int(math.ceil(0.5 * detector_mask.shape[0])), int(math.ceil(0.5 * detector_mask.shape[1])))
         detector_mask = self.crop_window(self.bin_mask(detector_mask, bin_to_shape=shape_to_bin))
         for i, image in enumerate(images):
-            # check if peak is valid if not drop data point # after processing and before fitted_images.append if using mode "fitted_sim" 
+            # check if peak is valid if not drop data point # after processing and before fitted_images.append if using mode "fitted_sim" in self.is_valid_peak()
             if simulation.valid_peak:
                 if not self.is_valid_peak(image, targets.distance[i]):
+                    # print(targets.omega_distance[i])
                     targets = targets.drop(i)
                     continue
             # crop
@@ -278,6 +284,7 @@ class DataAugmentation:
             fitted_images.append(image)
 
         targets = targets.reset_index(drop=True)
+        print(f"finished fitting with {len(targets)} fitted simulations")
 
         return fitted_images, targets
 
@@ -500,8 +507,8 @@ class DataAugmentation:
     def find_intensity_center(self, image, offset=15):
         return np.argmax(np.sum(image[:,offset:],axis=0))+offset
 
-    def is_valid_peak(self, image, distance, threshold=2):
-        target_peak = self.calculate_py_max(distance, mod="raw_sim") # eventually try with fitted_sim
+    def is_valid_peak(self, image, distance, threshold=5):
+        target_peak = self.calculate_py_max(distance, mod="raw_sim") # eventually try with fitted_sim just to ensure 
         is_peak = self.find_intensity_center(image)
         if abs(target_peak - is_peak) > threshold:
             return False
