@@ -2,7 +2,7 @@ import numpy
 import pandas
 import os
 #import tensorflow as tf
-from tensorflow.keras import models, utils, callbacks, optimizers, losses, metrics, Model
+from tensorflow.keras import models, utils, callbacks, optimizers, losses, metrics, Model, layers
 # from sklearn.model_selection import train_test_split
 # from sklearn.utils import shuffle
 from deep_learning import label_coder
@@ -10,10 +10,23 @@ from deep_learning import label_coder
 from glob import glob
 import re
 from datetime import date
-from .costume_loss import monotonic_categorical_crossentropy, monotonic_mse, monotonic_kl_divergence
+from .costume_loss import monotonic_categorical_crossentropy, monotonic_mse, monotonic_kl_divergence, informed_loss
+from base import utilities
 
 
-MAX_VALIDATION_ROUND = 2
+MAX_VALIDATION_ROUND = 10
+
+def generator(x, y, batch_size=256):
+    curIndex = 0
+    while True:
+        batch_x = x[curIndex:curIndex+batch_size]  # Select batch inputs
+        batch_y = y[curIndex:curIndex+batch_size]  # Select batch labels
+        curIndex += batch_size
+        if curIndex >= len(x):  # Reset to the start after an epoch
+            curIndex = 0
+
+        yield numpy.array(batch_x), numpy.array(batch_y)
+       # yield (numpy.array(batch_x), numpy.array(batch_y)), numpy.array(batch_y)
 
 def generate_ordered_train_test_indices(X, max_splits=10, test_size=0.1):
     num_samples = len(X)
@@ -84,12 +97,16 @@ class AlgorithmBase:
         if not os.path.exists(self.model_path):
             self.model_path += '/run_0' 
             os.makedirs(self.model_path)
+        elif not self.parameter['train']:
+            # Modify to the desired run
+            self.model_path += '/run_' + str(99)
         else:
             folders = sorted(os.listdir(self.model_path))
             newest = max([int(folder.split('_')[1]) for folder in folders if folder.startswith('run_')])
             self.model_path += '/run_' + str(newest + 1)
             if self.check: self.model_path += '_test'
             os.makedirs(self.model_path)
+        self.shuffle = False
 
     def reset_weights(self):
         '''
@@ -140,21 +157,176 @@ class AlgorithmBase:
         return labels
     
     def set_validation_data(self, validation_data):
-        if 'exp' in self.parameter['validation']:
+        if self.parameter['validation'] == 'exp_reduced':
+            sample = MAX_VALIDATION_ROUND if not self.check else 2
             images_validation, targets_validation = validation_data
-            images_validation = self.create_input_tensor(images_validation)
+            indices = numpy.arange(len(targets_validation))
+            numpy.random.shuffle(indices)
+            indices = [indices[i:i+len(targets_validation)//sample] for i in range(0, len(targets_validation), len(targets_validation)//sample)]
+            targets_validation = [targets_validation.loc[indices[i]].sort_index() for i in range(len(indices))]
+            images_validation = [images_validation[targets_validation[i].index] for i in range(len(targets_validation))]
+            targets_validation = [targets_validation[i].reset_index(drop=True) for i in range(len(indices))]
+            validation_data = list(zip(images_validation, targets_validation))
+
+        if 'exp' in self.parameter['validation']:
+            # images_validation, targets_validation = validation_data
+            # images_validation = self.create_input_tensor(images_validation)
             if '_' not in '\t'.join(self.keys):
                 self.keys_validation = self.keys
-                labels_validation = self.generate_labels(targets_validation)
+                #labels_validation = self.generate_labels(targets_validation)
             else:
                 keys = [key for key in self.keys if '_' not in key]
                 self.keys_validation = keys
-                labels_validation = self.generate_labels(targets_validation, keys=keys)
+                #labels_validation = self.generate_labels(targets_validation, keys=keys)
+        # else:
+        #     pass #TODO if sim:
+        #     # split training data to train and validation
+        # return images_validation, targets_validation, labels_validation
+        return validation_data
+
+    def predict_labels(self, input_data, model=None):
+        if not model: 
+            model = self.model
+        labels = model.predict(input_data)
+
+        if self.informed:
+            labels = labels[:, :, 220:, :][:, 0, :, 0]
+        
+        return labels
+
+    def train_on_simulations(self, images, target_values, validation_data):
+        
+        # get indices to split simulation data to training and test (# of splits := MAX_VALIDATION_ROUND)
+        train_test_splits = generate_ordered_train_test_indices(X=images, max_splits=MAX_VALIDATION_ROUND)
+        images = numpy.array(images)
+
+            # set optimizer
+        opt = optimizers.Adam(learning_rate = 0.0001)#, weight_decay = 1e-6)
+
+        # compile the model
+        if self.parameter['informed'] != False:
+            loss = [informed_loss(self.parameter['informed'], loss_fun=self.parameter['loss'], sample=self.label_coder.radius if 'radius' in self.keys else self.label_coder.distance)]
+        elif self.parameter['loss']=='mse':
+            loss = [losses.MeanSquaredError(),losses.MeanSquaredError()]
+        elif self.parameter['loss']=='monotonic_mse':
+            loss = [monotonic_mse]
+        elif self.parameter['loss']=='cce':
+            loss = [losses.CategoricalCrossentropy(label_smoothing=0.1)]
+        elif self.parameter['loss']=='monotonic_cce':
+            print("loss:", {self.parameter['loss']})
+            loss = [monotonic_categorical_crossentropy]
+        elif self.parameter['loss']=='kld':
+            loss = [losses.KLDivergence()]#[monotonic_mse]#[monotonic_kl_divergence]#[losses.CategoricalCrossentropy(label_smoothing=0.1)]#[monotonic_categorical_crossentropy]#[losses.KLDivergence()]#[losses.MeanSquaredError(),losses.MeanSquaredError()]#[losses.MeanAbsoluteError(),losses.MeanAbsoluteError()]
+        elif self.parameter['loss']=='monotonic_kld':
+            loss = [monotonic_kl_divergence]
+        metric = [metrics.MeanSquaredError(), metrics.RootMeanSquaredError(), metrics.CategoricalAccuracy()]
+
+        if self.informed: 
+            self.model.compile(optimizer=opt, 
+                          loss=[informed_loss(self.parameter['informed'], loss_fun=self.parameter['loss'], sample=self.label_coder.distance)],
+                          metrics=metric[:-1])
         else:
-            pass #TODO if sim:
-            # split training data to train and validation
-        return images_validation, targets_validation, labels_validation
-    
+            self.model.compile(optimizer=opt, loss=loss[:len(self.keys)], metrics=metric[:len(self.keys)])#,'accuracy'])
+        self.model_compiled = True
+        print(self.model.summary())    
+
+        # set_validation_data 
+        validation_data = self.set_validation_data(validation_data)
+
+        # start training in rounds
+        self.start_validation_loop(images, target_values, validation_data, train_test_splits)
+
+    def start_validation_loop(self, images, target_values, validation_data, train_test_splits):
+        
+        num_epochs = 2 if self.check else 25
+        model_scores = []
+
+        for i in range(MAX_VALIDATION_ROUND if not self.check else 2):
+            # split simulation data to training and test
+            x_train = images[train_test_splits[i][0].astype(int)]
+            x_test = images[train_test_splits[i][1].astype(int)]
+
+            # extract training and test simulation targets
+            y_train = target_values.loc[train_test_splits[i][0]].reset_index(drop=True)
+            y_test = target_values.loc[train_test_splits[i][1]].reset_index(drop=True)
+
+            if self.validation == 'sim':
+                # get indices to split training data to training and validation
+                train_validation_splits = generate_ordered_train_test_indices(X=x_train, max_splits=1)
+                # extract training and test simulation images
+                x_validation = x_train[train_validation_splits[0][1].astype(int)]
+                x_train = x_train[train_validation_splits[0][0].astype(int)]
+                # extract training and validation simulation targets
+                y_validation = y_train.loc[train_validation_splits[0][1]].reset_index(drop=True)
+                y_train = y_train.loc[train_validation_splits[0][0]].reset_index(drop=True)
+
+            elif self.validation == 'exp_reduced':
+                x_validation, y_validation = validation_data[i]
+
+            elif self.validation == 'exp':
+                x_validation, y_validation = validation_data
+  
+            # convert training, test& validation images to tensor
+            x_train = self.create_input_tensor(x_train)
+            x_test = self.create_input_tensor(x_test)
+            x_validation = self.create_input_tensor(x_validation)
+
+            # get training labels (one-hot vectors/ matrices)
+            y_train = self.generate_labels(y_train)
+            y_validation_labels = self.generate_labels(y_validation)
+
+            # convert dictionary labels to list of lists
+            labels_training_list = [numpy.array(y_train[k]) for k in y_train]
+            labels_validation_list = [numpy.array(y_validation_labels[k]) for k in y_validation_labels]
+
+            # define model callbacks
+            checkpoint_filepath = self.model_path + "/round_" + str(i) + "/weights_epoch-{epoch:02d}.weights.h5"
+            h5_logger_callback = callbacks.ModelCheckpoint(filepath=checkpoint_filepath, monitor='accuracy', save_weights_only=True, mode='max')
+            csv_logger_callback = callbacks.CSVLogger(filename=self.model_path + '/round_' + str(i) + '_history.csv')
+           
+            if self.informed:
+                reshaped_labels = numpy.array(labels_training_list).reshape(len(labels_training_list[0]), 1, 380, 1)
+                broadcasted_labels = numpy.tile(reshaped_labels, (1, 260, 1, 1))
+                # Combine images and labels
+                combined_data = numpy.append(x_train, broadcasted_labels, axis=2)  # Shape: (n, 260, 600, 1)
+
+                # Train the model
+                history = self.model.fit(
+                        x_train,  
+                        combined_data,
+                        batch_size=256,
+                        callbacks=[h5_logger_callback, csv_logger_callback],
+                        epochs=num_epochs,
+                        shuffle=False)
+
+            else:
+                history = self.model.fit(
+                        x=x_train, y=labels_training_list, 
+                        validation_data=(x_validation, labels_validation_list),  
+                        callbacks=[h5_logger_callback, csv_logger_callback], 
+                        epochs=num_epochs, batch_size=256, 
+                        shuffle=self.shuffle)
+                
+            print('finished training')
+            model_score = self.update_model_with_optimal_parameters(images_validation=x_validation, targets_validation=y_validation, model_path=self.model_path + "/round_" + str(i))
+            # and register the model score
+            model_scores.append(model_score)
+            
+            # prediction of test data
+            labels_test_prediction = self.predict_labels(x_test)
+            targets_test_prediction = self.get_numerical_prediction(labels_test_prediction.copy())
+            self.save_prediction(target_values_true=y_test, target_values_prediction=targets_test_prediction, data='test_sim', model_path=self.model_path + "/round_" + str(i))
+            # save predictions of test labels
+            self.save_raw_prediction(raw_labels=labels_test_prediction, model_path=self.model_path + "/round_" + str(i), data='test_sim')
+            
+            # re-initialize model weights before next round
+            self.reset_weights()
+
+        # estimate network TRAINING reproducibility based on trained models
+        self.record_model_scores(model_scores, data='validation')
+        return 0
+
+
     def train_on_simulations_validate_with_experiment(self, images, target_values, validation_data):
 
         # split simulation data to training and test
@@ -183,11 +355,12 @@ class AlgorithmBase:
         print(next(iter(labels_training.values()))[0][0])
         # convert dictionary labels to list of lists
         labels_training_list = [numpy.array(labels_training[k]) for k in labels_training]
-        labels_training_list = [numpy.array(labels_training[k]) for k in labels_training]
         print('example label:', labels_training_list[0][4])
 
         # compile the model
-        if self.parameter['loss']=='mse':
+        if self.parameter['informed'] != False:
+            loss = [informed_loss(self.parameter['informed'], loss_fun=self.parameter['loss'], sample=self.label_coder.radius if 'radius' in self.keys else self.label_coder.distance)]
+        elif self.parameter['loss']=='mse':
             loss = [losses.MeanSquaredError(),losses.MeanSquaredError()]
         elif self.parameter['loss']=='monotonic_mse':
             loss = [monotonic_mse]
@@ -196,10 +369,18 @@ class AlgorithmBase:
         elif self.parameter['loss']=='monotonic_cce':
             print("loss:", {self.parameter['loss']})
             loss = [monotonic_categorical_crossentropy]
-        else:
+        elif self.parameter['loss']=='kld':
             loss = [losses.KLDivergence()]#[monotonic_mse]#[monotonic_kl_divergence]#[losses.CategoricalCrossentropy(label_smoothing=0.1)]#[monotonic_categorical_crossentropy]#[losses.KLDivergence()]#[losses.MeanSquaredError(),losses.MeanSquaredError()]#[losses.MeanAbsoluteError(),losses.MeanAbsoluteError()]
+        elif self.parameter['loss']=='monotonic_kld':
+            loss = [monotonic_kl_divergence]
         metric = [metrics.MeanSquaredError(), metrics.RootMeanSquaredError()]
-        self.model.compile(optimizer=opt, loss=loss[:len(self.keys)], metrics=metric[:len(self.keys)])#,'accuracy'])
+
+        if self.informed: 
+            self.model.compile(optimizer=opt, 
+                          loss=[informed_loss(self.parameter['informed'], loss_fun=self.parameter['loss'], sample=self.label_coder.distance)],
+                          metrics=metric[:-1])
+        else:
+            self.model.compile(optimizer=opt, loss=loss[:len(self.keys)], metrics=metric[:len(self.keys)])#,'accuracy'])
         self.model_compiled = True
         print(self.model.summary())
 
@@ -207,14 +388,40 @@ class AlgorithmBase:
         # repeat training to derive estimation for the model accuracy
         model_scores = []
         num_epochs = 2 if self.check else 25
-        for i in range(MAX_VALIDATION_ROUND):
+        for i in range(MAX_VALIDATION_ROUND if not self.check else 2):
             # define model callbacks
             checkpoint_filepath = self.model_path + "/round_" + str(i) + "/weights_epoch-{epoch:02d}.weights.h5"
             h5_logger_callback = callbacks.ModelCheckpoint(filepath=checkpoint_filepath, monitor='accuracy', save_weights_only=True, mode='max')
             csv_logger_callback = callbacks.CSVLogger(filename=self.model_path + '/round_' + str(i) + '_history.csv')
 
             # train the model
-            history = self.model.fit(x=images_train, y=labels_training_list, callbacks=[h5_logger_callback, csv_logger_callback], epochs=num_epochs, batch_size=256, shuffle=False)
+            #train_gen = generator(images_train, labels_training_list)
+    
+    #model.fit(X, np.append(Y_true, X[:, 0], axis =1), batch_size = batch_size, epochs=90, shuffle=True, verbose=1)
+
+
+            # Updated training loop
+            if self.informed:
+                reshaped_labels = numpy.array(labels_training_list).reshape(len(labels_training_list[0]), 1, 380, 1)
+                broadcasted_labels = numpy.tile(reshaped_labels, (1, 260, 1, 1))
+                # Combine images and labels
+                combined_data = numpy.append(images_train, broadcasted_labels, axis=2)  # Shape: (n, 260, 600, 1)
+
+                # Train the model
+                history = self.model.fit(
+                        images_train,  
+                        combined_data,  
+                        batch_size=256,
+                        callbacks=[h5_logger_callback, csv_logger_callback],
+                        epochs=num_epochs,
+                        shuffle=False)
+                
+            else:
+                history = self.model.fit(
+                        x=images_train, y=labels_training_list, 
+                        callbacks=[h5_logger_callback, csv_logger_callback], 
+                        epochs=num_epochs, batch_size=256, 
+                        shuffle=self.shuffle)
             
             # obtain optimal number of epoch for the model, save scores to csv, load weights back to the model, delete weights
             print('finished training')
@@ -223,16 +430,18 @@ class AlgorithmBase:
             model_scores.append(model_score)
             
             # save predictions of validation data from the best model wrt expected MSE
-            labels_validation_prediction = self.model.predict(images_validation)
-            targets_validation_prediction = self.get_numerical_prediction(labels_validation_prediction)
+            labels_validation_prediction = self.predict_labels(images_validation)
+
+            targets_validation_prediction = self.get_numerical_prediction(labels_validation_prediction.copy())
             self.save_experiment_prediction(target_values_true=targets_validation, target_values_prediction=targets_validation_prediction, data='validation', model_path=self.model_path + "/round_" + str(i))
             
             # save predictions of validation labels
             self.save_raw_prediction(raw_labels=labels_validation_prediction, model_path=self.model_path + "/round_" + str(i), data='validation')
             
             # prediction of test data
-            labels_test_prediction = self.model.predict(images_test)
-            targets_test_prediction = self.get_numerical_prediction(labels_test_prediction)
+            labels_test_prediction = self.predict_labels(images_test)
+
+            targets_test_prediction = self.get_numerical_prediction(labels_test_prediction.copy())
             self.save_prediction(target_values_true=target_values_test, target_values_prediction=targets_test_prediction, data='test_sim', model_path=self.model_path + "/round_" + str(i))
             
             # save predictions of test labels
@@ -248,64 +457,158 @@ class AlgorithmBase:
         # case if validation data is simulation data
         # get indices to split data to training and test
         train_test_splits = generate_ordered_train_test_indices(X=images)
+        images = numpy.array(images)
+
+        # split simulation data to training and test
+        # images_train = images[train_test_splits[0][0].astype(int)]
+        # images_test = images[train_test_splits[0][1].astype(int)]
+
+        # extract training and test simulation targets
+        # target_values_train = target_values.loc[train_test_splits[0][0]].reset_index(drop=True)
+        # target_values_test = target_values.loc[train_test_splits[0][1]].reset_index(drop=True)        
+        # target_values_test.to_csv(self.model_path + '/' + 'simulation_test_targets.csv')
+
+        # split training data to training and validation
+        # train_test_splits = generate_ordered_train_test_indices(X=images_train, max_splits=1)
+        # images_train = images_train[train_test_splits[0][0].astype(int)]
+        # images_validation = images_train[train_test_splits[0][1].astype(int)]
+        # target_values_train = target_values_train.loc[train_test_splits[0][0]].reset_index(drop=True)
+        # target_values_validation = target_values_train.loc[train_test_splits[0][0]].reset_index(drop=True)
+
+        # convert simulation images to tensor
+        # images_train = self.create_input_tensor(images_train)
+        # images_validation = self.create_input_tensor(images_validation)
+        # images_test = self.create_input_tensor(images_test)
+
         # set optimizer
         opt = optimizers.Adam(learning_rate = 0.0001, weight_decay = 1e-6)
+    
+        # get training amd validation labels (one-hot vectors/ matrices)
+        # labels_training = self.generate_labels(target_values_train)
+        # labels_validation = self.generate_labels(target_values_validation)
+        # # convert dictionary labels to list of lists
+        # labels_training_list = [numpy.array(labels_training[k]) for k in labels_training]
+        # labels_validation_list = [numpy.array(labels_validation[k]) for k in labels_validation]
+
         # compile the model
-        loss = [losses.MeanSquaredError(),losses.MeanSquaredError()]#[losses.MeanAbsoluteError(),losses.MeanAbsoluteError()]
+        if self.parameter['informed'] != False:
+            loss = [informed_loss(self.parameter['informed'], loss_fun=self.parameter['loss'], sample=self.label_coder.radius if 'radius' in self.keys else self.label_coder.distance)]
+        elif self.parameter['loss']=='mse':
+            loss = [losses.MeanSquaredError(),losses.MeanSquaredError()]
+        elif self.parameter['loss']=='monotonic_mse':
+            loss = [monotonic_mse]
+        elif self.parameter['loss']=='cce':
+            loss = [losses.CategoricalCrossentropy(label_smoothing=0.1)]
+        elif self.parameter['loss']=='monotonic_cce':
+            print("loss:", {self.parameter['loss']})
+            loss = [monotonic_categorical_crossentropy]
+        elif self.parameter['loss']=='kld':
+            loss = [losses.KLDivergence()]
+        elif self.parameter['loss']=='monotonic_kld':
+            loss = [monotonic_kl_divergence]
         metric = [metrics.MeanSquaredError(), metrics.RootMeanSquaredError()]
-        self.model.compile(optimizer=opt, loss=loss[:len(self.keys)], metrics=metric[:len(self.keys)])#,'accuracy'])
+
+        if self.informed: 
+            self.model.compile(optimizer=opt, 
+                          loss=[informed_loss(self.parameter['informed'], loss_fun=self.parameter['loss'], sample=self.label_coder.distance)],
+                          metrics=metric[:-1])
+        else:
+            self.model.compile(optimizer=opt, loss=loss[:len(self.keys)], metrics=metric[:len(self.keys)])#,'accuracy'])
         self.model_compiled = True
         print(self.model.summary())
+
         # strart iteration
         # repeat training to derive estimation for the model accuracy
-        images = numpy.array(images)
         model_scores = []
-        num_epochs = 2 if self.check else 50
-        for i in range(MAX_VALIDATION_ROUND):
-            # convert training and test simulation images to tensor
+        num_epochs = 2 if self.check else 25
+        for i in range(MAX_VALIDATION_ROUND if not self.check else 2):
+            # split simulation data to training and test
             x_train = images[train_test_splits[i][0].astype(int)]
             x_test = images[train_test_splits[i][1].astype(int)]
+        
             # extract training and test simulation targets
             y_train = target_values.loc[train_test_splits[i][0]].reset_index(drop=True)
             y_test = target_values.loc[train_test_splits[i][1]].reset_index(drop=True)
+
             # get indices to split training data to training and validation
             train_validation_splits = generate_ordered_train_test_indices(X=x_train, max_splits=1)
             # extract training and test simulation images
-            x_train = x_train[train_validation_splits[0][0]]
-            x_validation = x_train[train_validation_splits[0][1]]
+            x_validation = x_train[train_validation_splits[0][1].astype(int)]
+            x_train = x_train[train_validation_splits[0][0].astype(int)]
+
             # convert training, test& validation simulation images to tensor
             x_train = self.create_input_tensor(x_train)
             x_test = self.create_input_tensor(x_test)
             x_validation = self.create_input_tensor(x_validation)
+
             # extract training and validation simulation targets
             y_validation = y_train.loc[train_validation_splits[0][1]].reset_index(drop=True)
             y_train = y_train.loc[train_validation_splits[0][0]].reset_index(drop=True)
+
             # get training, test& validation labels (one-hot vectors/ matrices)
             y_train = self.generate_labels(y_train)
             # convert dictionary labels to list of lists
             labels_training_list = [numpy.array(y_train[k]) for k in y_train]
+            labels_validation_list = [numpy.array(y_validation[k]) for k in y_validation]
+
             # define model callbacks
             checkpoint_filepath = self.model_path + "/round_" + str(i) + "/weights_epoch-{epoch:02d}.weights.h5"
             h5_logger_callback = callbacks.ModelCheckpoint(filepath=checkpoint_filepath, monitor='accuracy', save_weights_only=True, mode='max')
             csv_logger_callback = callbacks.CSVLogger(filename=self.model_path + '/round_' + str(i) + '_history.csv')
+            early_stopping_callback = callbacks.EarlyStopping(
+                    monitor="val_loss",
+                    mode="auto",
+                    restore_best_weights=True
+                    )
+
+            # Updated training loop
+            if self.informed:
+                reshaped_labels = numpy.array(labels_training_list).reshape(len(labels_training_list[0]), 1, 380, 1)
+                broadcasted_labels = numpy.tile(reshaped_labels, (1, 260, 1, 1))
+                # Combine images and labels
+                combined_data = numpy.append(x_train, broadcasted_labels, axis=2)  # Shape: (n, 260, 600, 1)
+
+                # Train the model
+                history = self.model.fit(
+                        x_train,  
+                        combined_data,  
+                        batch_size=256,
+                        callbacks=[h5_logger_callback, csv_logger_callback],
+                        epochs=num_epochs,
+                        shuffle=False)
+                
+            else:
+                history = self.model.fit(
+                        x=x_train, y=labels_training_list, 
+                        callbacks=[h5_logger_callback, csv_logger_callback], 
+                        epochs=num_epochs, batch_size=256, 
+                        shuffle=self.shuffle)
             # train the model
-            history = self.model.fit(x=x_train, y=labels_training_list, callbacks=[h5_logger_callback, csv_logger_callback], epochs=num_epochs, batch_size=256, shuffle=False)
+            # history = self.model.fit(
+            #         x=x_train, y=labels_training_list, 
+            #         callbacks=[csv_logger_callback, h5_logger_callback], 
+            #         epochs=num_epochs, batch_size=256, shuffle=False)
+            
             # obtain optimal number of epoch for the model, save scores to csv, load weights back to the model, delete weights
             print('finished training')
             model_score = self.update_model_with_optimal_parameters(images_validation=x_validation, targets_validation=y_validation, model_path=self.model_path + "/round_" + str(i))
+            
             # and register the model score
             model_scores.append(model_score)
             # save predictions of validation data from the best model wrt expected MSE
-            labels_validation_prediction = self.model.predict(x_validation)
+            labels_validation_prediction = self.predict_labels(x_validation)
             targets_validation_prediction = self.get_numerical_prediction(labels_validation_prediction)
             # if validation data are experiment we save with save_experiment_prediction else with save_simulation_prediction
             self.save_prediction(target_values_true=y_validation, target_values_prediction=targets_validation_prediction, data='validation', model_path=self.model_path + "/round_" + str(i))
             # save predictions of validation labels
-            self.save_raw_prediction(raw_labels=labels_validation_prediction, model_path=self.model_path + "/round_" + str(i), data='validation')
-            # prediction of training data
-            labels_test_prediction = self.model.predict(x_test)
+            #self.save_raw_prediction(raw_labels=labels_validation_prediction, model_path=self.model_path + "/round_" + str(i), data='validation')
+            
+            # prediction of test data
+            labels_test_prediction = self.predict_labels(x_test)
             targets_test_prediction = self.get_numerical_prediction(labels_test_prediction)
             self.save_prediction(target_values_true=y_test, target_values_prediction=targets_test_prediction, data='test_sim', model_path=self.model_path + "/round_" + str(i))
+            self.save_raw_prediction(raw_labels=labels_test_prediction, model_path=self.model_path + "/round_" + str(i), data='test')
+
             # re-initialize model weights before next round
             self.reset_weights()
         # estimate network TRAINING reproducibility based on trained models
@@ -336,7 +639,7 @@ class AlgorithmBase:
         # repeat training to derive estimation for the model accuracy
         model_scores = []
         num_epochs = 2 if self.check else 25
-        for i in range(MAX_VALIDATION_ROUND):
+        for i in range(MAX_VALIDATION_ROUND if not self.check else 2):
             # define model callbacks
             checkpoint_filepath = self.model_path + "/round_" + str(i) + "/weights_epoch-{epoch:02d}.weights.h5"
             h5_logger_callback = callbacks.ModelCheckpoint(filepath=checkpoint_filepath, monitor='val_accuracy', save_weights_only=True, mode='max')
@@ -352,14 +655,14 @@ class AlgorithmBase:
             # save model
             #self.save_model(only_weights=True, model_path=self.model_path + "/round_" + str(i))
             # save predictions of validation data from the best model wrt expected MSE
-            labels_validation_prediction = self.model.predict(images_validation)
+            labels_validation_prediction = self.predict_labels(images_validation)
             targets_validation_prediction = self.get_numerical_prediction(labels_validation_prediction)
             # if validation data are experiment we save with save_experiment_prediction else with save_simulation_prediction
             self.save_experiment_prediction(target_values_true=targets_validation, target_values_prediction=targets_validation_prediction, data='validation', model_path=self.model_path + "/round_" + str(i))
             # save predictions of validation labels
             self.save_raw_prediction(raw_labels=labels_validation_prediction, model_path=self.model_path + "/round_" + str(i), data='validation')
             # prediction of training data
-            labels_train_prediction = self.model.predict(images)
+            labels_train_prediction = self.predict_labels(images)
             targets_train_prediction = self.get_numerical_prediction(labels_train_prediction)
             self.save_prediction(target_values=target_values, target_values_prediction=targets_train_prediction, data='train', model_path=self.model_path + "/round_" + str(i))
             # save predictions of training labels
@@ -388,7 +691,9 @@ class AlgorithmBase:
 
     def save_raw_prediction(self, raw_labels, model_path, data):
         path_raw_data = model_path + '/raw_labels_' + data + '_data.npz'
-        numpy.savez(path_raw_data, **{key: raw_labels[i] for i, key in enumerate(self.keys)})
+        numpy.savez(path_raw_data, radius=raw_labels)
+        #path_raw_data = model_path + '/raw_labels_' + data + '_data.npz'
+        #numpy.savez(path_raw_data, **{key: raw_labels for key in enumerate(self.keys)}) ## need to rethink this!!!
 
     def save_prediction(self, target_values_true, target_values_prediction, model_path, data):
         for key in self.keys:
@@ -402,18 +707,7 @@ class AlgorithmBase:
     def record_model_scores(self, model_scores, data):
         df_model_scores = pandas.DataFrame(model_scores) # for saving the model scores
         df_model_scores.to_csv(self.model_path + '/model_scores.csv')
-
-
-        # get model with lowest expected MSE value
-        # iterate all rounds and delete weights except for best model
-        
-        # run_parameters = pandas.DataFrame([data], columns=['col1', 'col2', 'col3'])
-        # if os.path.exists(self.record_file):
-        #     # append to the existing file
-        #     run_parameters.to_csv(self.record_file, mode='a', header=False, index=False)
-        # else:
-        #     # create a new file and write the row
-        #     run_parameters.to_csv(self.record_file, mode='w', header=True, index=False)
+ 
 
     def update_model_with_optimal_parameters(self,images_validation, targets_validation, model_path):
         # list weight files
@@ -422,6 +716,7 @@ class AlgorithmBase:
         epochs = []
         #val_accs = []
         val_MSE = []
+        real_MSE = []
         best_id = 0
         acc_estimation = []
         # loop through weight files
@@ -429,12 +724,16 @@ class AlgorithmBase:
             # load weights back to model
             self.model.load_weights(weights)
             # predict labels for validation data
-            labels_validation_prediction = self.model.predict(images_validation) # --->>> this is a list of lists!!! need to make a for loop to take it into acount!
+            labels_validation_prediction = self.predict_labels(images_validation) # --->>> this is a list of lists!!! need to make a for loop to take it into acount!
+            print(labels_validation_prediction.shape)
             # coldbatch labels
             targets_validation_prediction_max, targets_validation_prediction_avg = self.get_numerical_prediction(labels_validation_prediction)
-            # calculate expected MSE"
+            # calculate MSE, expected MSE and relative accuracy
+            labels_validation = self.generate_labels(targets_validation)
             expected_MSE = self.get_MSE(targets_validation_prediction_avg, targets_validation)
+            MSE_error = self.get_MSE({self.keys[0]:labels_validation_prediction}, labels_validation)
             estimated_acc = self.get_relative_accuracy(targets_validation_prediction_avg, targets_validation)
+            real_MSE.append(MSE_error)
             acc_estimation.append(estimated_acc)
             val_MSE.append(expected_MSE)
             # pattern-match epoch number
@@ -446,7 +745,7 @@ class AlgorithmBase:
         # load best weights back to model
         self.model.load_weights(weight_files[best_id])
         # save model scores
-        df_model_scores = pandas.DataFrame({'epoch':epochs,'expected_MSE':val_MSE, 'estimated_acc': acc_estimation}) # for saving the model scores
+        df_model_scores = pandas.DataFrame({'epoch':epochs,'MSE':real_MSE,'expected_MSE':val_MSE, 'estimated_acc': acc_estimation}) # for saving the model scores
         df_model_scores.to_csv(model_path + '/model_scores.csv')
         # set best score
         model_best_score = {'epoch':epochs[best_id],'expected_MSE':val_MSE[best_id], 'estimated_acc': acc_estimation[best_id]}
@@ -463,11 +762,12 @@ class AlgorithmBase:
         images = self.create_input_tensor(images)
         if self.model_compiled and self.model_path:
             #model_scores = []
-            for i in range(MAX_VALIDATION_ROUND):
+            for i in range(MAX_VALIDATION_ROUND if not self.check else 2):
                # load weights
                #self.model = self.load_weights(model=self.model)
                # predict on labeled and experiment data
-                labels_test_prediction = self.model.predict(images)
+                labels_test_prediction = self.predict_labels(images)
+
                 self.save_raw_prediction(raw_labels=labels_test_prediction, model_path=self.model_path + "/round_" + str(i), data='test_experiment')
                 targets_test_prediction = self.get_numerical_prediction()
                 self.save_experiment_prediction(target_values_true=target_values, target_values_prediction=targets_test_prediction, data='test_experiment', model_path=self.model_path + "/round_" + str(i))
@@ -484,17 +784,32 @@ class AlgorithmBase:
             experiment_images = self.create_input_tensor(experiment_images)
             if self.model_compiled and self.model_path:
                 model_scores[measurement] = []
-                for i in range(MAX_VALIDATION_ROUND):
-                    weight_file = glob(self.model_path + "/round_" + str(i) + "/weights_*-*.h5")[0]
+                for j in range(MAX_VALIDATION_ROUND if not self.check else 2):
+                    weight_file = glob(self.model_path + "/round_" + str(j) + "/weights_*-*.h5")[0]
                     # load weights
                     self.model.load_weights(weight_file)
                     # predict on experiment labeled data
-                    experiment_prediction_labels = self.model.predict(experiment_images)
-                    self.save_raw_prediction(raw_labels=experiment_prediction_labels, model_path=self.model_path + "/round_" + str(i), data='test_' + measurement)
+                    experiment_prediction_labels = self.predict_labels(experiment_images)
+
+                    self.save_raw_prediction(raw_labels=experiment_prediction_labels, model_path=self.model_path + "/round_" + str(j), data='test_' + measurement)
                     experiment_prediction_values = self.get_numerical_prediction(experiment_prediction_labels)
-                    self.save_experiment_prediction(target_values_true=experiment_targets, target_values_prediction=experiment_prediction_values, data='test_experiment_' + measurement, model_path=self.model_path + "/round_" + str(i))
+                    self.save_experiment_prediction(target_values_true=experiment_targets, target_values_prediction=experiment_prediction_values, data='test_experiment_' + measurement, model_path=self.model_path + "/round_" + str(j))
                     score = self.get_MSE(values=experiment_prediction_values[1], targets=experiment_targets)
                     model_scores[measurement].append(score)
+            else:
+                model_scores = pandas.read_csv(self.model_path + '/model_scores.csv')
+                best_round = model_scores.expected_MSE.idxmin()
+                folder = self.model_path + '/round_' + str(best_round)
+                weight_file = glob(folder + "/weights_*-*.h5")[0]
+                self.model.load_weights(weight_file)
+                experiment_prediction_labels = self.predict_labels(experiment_images)
+                self.save_raw_prediction(raw_labels=experiment_prediction_labels, model_path=self.model_path, data='test_' + measurement)
+
+                experiment_prediction_values = self.get_numerical_prediction(experiment_prediction_labels)
+                self.save_experiment_prediction(target_values_true=experiment_targets, target_values_prediction=experiment_prediction_values, data='test_experiment_' + measurement, model_path=self.model_path + "/round_" + str(best_round))
+
+        if not self.parameter['train']: return
+
         df = pandas.read_csv(self.model_path + '/model_scores.csv', index_col=0)
         df['expected_MSE_test'] = numpy.round(numpy.mean(numpy.array(list(model_scores.values())).T, axis=1),2)
         df.to_csv(self.model_path + '/model_scores.csv', index=False)            
@@ -515,12 +830,12 @@ class AlgorithmBase:
         # compile model
         #self.model.compile(optimizer=self.parameter['optimizer'], loss=self.parameter['loss'], metrics=self.parameter['metrics'])
         if self.model_compiled and self.model_path:
-            for i in range(MAX_VALIDATION_ROUND):
+            for i in range(MAX_VALIDATION_ROUND if not self.check else 2):
                 weight_file = glob(self.model_path + "/round_" + str(i) + "/weights_*-*.h5")[0]
                 # load weights
                 self.model.load_weights(weight_file)
                 # predict on unlabeled real data
-                predictions = self.model.predict(images)
+                predictions = self.predict_labels(images)
                 self.save_raw_prediction(raw_labels=predictions, model_path=self.model_path + "/round_" + str(i), data='real')
                 prediction_values = self.get_numerical_prediction(predictions)
                 self.save_real_prediction(files=files, target_values_prediction=prediction_values, data='real', model_path=self.model_path + "/round_" + str(i))
@@ -599,24 +914,16 @@ class AlgorithmBase:
         utils.plot_model(self.model, path + 'results/' + self.TYPE.lower() + '_model_plot.pdf', show_shapes=True, show_layer_names=False)
 
 
-    def load_weights(self, model):
-        pass
-        """
-        Load model weights. To load the model, instantiate the model abd load the weights into the empty model object.
-        :param model: The empty model.
-        :return model with weights.
-        """
-        #model.load_weights(self.parameter['path'] + 'deep_learning/models/' + self.TYPE.lower() + '_weights_' + self.parameter['run'] + '.h5')
-        #return model
-
     def load_weights_from_path(self, model, path):
         """
         Load model weights from path. To load the model, instantiate the model abd load the weights into the empty model object.
         :param model: The empty model.
         :return model with weights.
         """
+        model = self.model if not model else model
         model.load_weights(path)
         return model
+    
 
     def estimate_model(self, model_path=None, thresh=None):
         if model_path is not None:

@@ -2,8 +2,8 @@ import numpy as np
 #import yaml
 import json
 
-def record_run_parameters(run_path, morphology, training_scope, augmentation, model, labels, validation, 
-                          estimation, n_training, n_batchs_and_epochs, output_units, loss, learning_rate, decay):
+def record_run_parameters(desc, run_path, morphology, training_scope, augmentation, model, labels, validation, 
+                          estimation, n_training, n_batchs_and_epochs, output_units, loss, learning_rate, decay, informed, constrain, shuffled):
     global_run_logger = {"simulation_parameters":{},"preprocessing_parameters":{},
                         "algorithm_parameters":{},"architecture_parameters":{}}
     global_run_logger["simulation_parameters"] = {
@@ -14,8 +14,8 @@ def record_run_parameters(run_path, morphology, training_scope, augmentation, mo
 						"distance": training_scope["distance"],               # dictionary
                         "omega_distance": training_scope["omega_distance"]    # dictionary
 						},
-					"percolation_thresh": True,                               # bool (radius distance bounds used)
-					"valide_peak": True                                       # bool (only simulations with valid peak py_max ~ 2pi/D used)
+					"percolation_thresh": constrain,                               # bool (radius distance bounds used)
+					"valide_peak": constrain                                       # bool (only simulations with valid peak py_max ~ 2pi/D used)
 					}
     print(f"learning_rate: {learning_rate.numpy()}, decay: {decay}")
     global_run_logger["preprocessing_parameters"] = {
@@ -27,9 +27,12 @@ def record_run_parameters(run_path, morphology, training_scope, augmentation, mo
 					}
     
     global_run_logger["algorithm_parameters"] = {
+        			"run_desc": desc,
 					"label_model": labels,
 					"validation": validation,
 					"estimation": estimation,
+                    "informed": informed,
+                    "shuffle": shuffled,
 					"output_units":
 							{
                             "radius": output_units["radius"],
@@ -73,74 +76,7 @@ def get_param_lognorm(m, v):
 def lognorm_func(x, s, loc, scale=1):
     return scale/(s*x*np.sqrt(2*np.pi))*np.exp(-(np.log(x)-loc)**2/(2*s**2))
 
-def record_simulation_parameters(global_run_logger, simulation):
-    global_run_logger["simulation_parameters"] = {
-					["scope"]:
-						{
-						["radius"]: simulation.radius_interval,
-						["sigma_radius"]: simulation.sigma_interval,
-						["distance"]: simulation.distance_interval,
-						["omega_distance"]: simulation.omega_interval
-						},
-					["percolation_thresh"]: simulation.percolation_thresh,
-					["valide_peak"]: simulation.self.valid_peak 
-					}
 
-def record_preprocessing_parameters(global_run_logger, augmentation):
-    global_run_logger["preprocessing_parameters"] = {
-					["beta"]: augmentation.beta,
-					["ROI"]: augmentation.ROI,
-					["noise"]: augmentation.add_noise,
-					["median"]: augmentation.median,
-					["gradient"]: augmentation.gradient
-					}
-
-def record_algorithm_parameters(global_run_logger, label_mode, validation, estimation, output_units, n_training, n_test):
-    global_run_logger["algorithm_parameters"] = {
-					["label_model"]: label_mode,
-					["validation"]: validation,
-					["estimation"]: estimation,
-					["output_units"]:
-							{
-                            ["radius"]: output_units["radius"],
-                            ["sigma_radius"]: output_units["sigma"],
-                            ["distance"]: output_units["distance"],
-                            ["omega_distance"]: output_units["omega"]
-							},
-					["n_training"]:n_training,
-					["n_test"]:n_test,					
-					}
-
-def record_architecture_parameters(global_run_logger, optimizer, learning_rate, decay, loss, n_epochs, batch_size, model_name):
-    global_run_logger["architecture_parameters"] = {
-					["optimizer"]:
-						{
-						["optimizer"]: optimizer,
-						["learning_rate"]: learning_rate,
-						["decay"]: decay
-                        },
-					["loss"]:
-						{
-                        ["radius"]: loss["radius"],
-                        ["sigma_radius"]: loss["sigma"],
-                        ["distance"]: loss["distance"],
-                        ["omega_distance"]: loss["omega"]
-						},
-					["n_epochs"]: n_epochs,
-					["batch_size"]: batch_size,
-					["model_name"]: model_name
-					}
-    
-def record_run(global_run_logger, model_path):
-    run_id = model_path.split('/')[-1]
-    model_path = '/'.join(model_path.split('/')[:-1]) + '/'
-    archive_path = model_path + 'model_parameters_archive.yaml'
-    with open(archive_path) as f:
-        archive = yaml.load(f)
-    archive[run_id] = global_run_logger
-    with open(archive_path, "w") as file:
-        yaml.dump(archive, file)
-    
 
 def expand2d(vect, size2, vertical=True):
     """

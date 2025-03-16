@@ -3,6 +3,7 @@
 import argparse
 
 # mode
+TRAIN = True
 TEST = True
 REAL = False
 RUN = '_256_25' # test description
@@ -26,20 +27,22 @@ PREMADE_REAL = False # unlabeled experiments are prepared in advance (loaded)
                      # usefull when using different detectors
 
 SIM_SOURCE = 'factors_h5'#'ready_file'
-BETA = 0.75
+BETA =  0 #  1.0 # 0.85  #
 
 # validation parameters
-VALIDATION = 'exp' # 'exp_reduced' # 'sim'
+VALIDATION = 'exp_reduced' #   'sim' #   'exp' #    
 # exp for using a whole dataset of experiment for the validation
 # exp_reduced for using only subset of the experiment dataset
 # sim using only simulations for validatio
 
 # deep learning parameters
 NN = 'MLP' #'CNN' #  'VGG' # 'DENSE'
-FLAG = 'radius' #'distance' #  'all' # 
+FLAG =  'distance' # 'radius' #   ''all' # 
 DISTRIBUTION = False
-LOSS = ''#'monotonic_cce'#'cce'#'monotonic_mse'#'mse'#
-ESTIMATION = 'naive' # naive confidence estimation #'cross_val' # Monte Carlo cross validation to obtain estimation -> only if validation data is same as for training
+LOSS =    'cce'    # 'mse' # 'monotonic_cce' #   'monotonic_mse' # 'kld'  #      'monotonic_kld' #     
+INFORMED =  False #  True # 
+CONSTRAIN = True
+ESTIMATION = 'naive' # naive confidence estimation # 'cross_val' # Monte Carlo cross validation to obtain estimation -> only if validation data is same as for training
 LABELS_R = 270#200#
 LABELS_D = 380#370
 LABELS_S = 40
@@ -60,7 +63,8 @@ def initialize_argument_parser():
     """Common configuration for parsers"""
     parser = argparse.ArgumentParser()
     # modes
-    parser.add_argument('--test', dest='test', type=bool, help='train and test the network on labeled data', default=TEST)
+    parser.add_argument('--train', dest='train', type=bool, help='train the network on simulated data', default=TRAIN)
+    parser.add_argument('--test', dest='test', type=bool, help='test the network on labeled data', default=TEST)
     parser.add_argument('--real', dest='real', type=bool, help='train and execute the network on unlabeled data', default=REAL)
     parser.add_argument('--run', dest='run', type=str, help='identifier for the specific run', default=RUN)
     parser.add_argument('--check', dest='check', type=bool, help='check the pipeline', default=CHECK)
@@ -85,6 +89,7 @@ def initialize_argument_parser():
     parser.add_argument('--fast_real', dest='fast_real', type=bool, help='use unlabeled experiment images prepared in advance', default=PREMADE_REAL)
     parser.add_argument('--sim_source', dest='sim_source', type=str, help='select source of simulations data', choices=['factors_h5', 'factors_file', 'ready_h5', 'ready_file'], default=SIM_SOURCE)
     parser.add_argument('--beta', dest='beta', type=float, help='choose parameter for intensity thresholding', default=BETA)
+    parser.add_argument('--constrain', dest='constrain', type=bool, help='use constrains on simulations', default=CONSTRAIN)
 
     # deep learning parameter
     parser.add_argument('--validation', dest='validation', type=str, help='select data to use for validation, if "other" specified: modify path to validation data and adjust file format',
@@ -92,7 +97,8 @@ def initialize_argument_parser():
     parser.add_argument('--algorithm', dest='algorithm', type=str, help='select deep learning algorithm', choices=['CNN', 'MLP', 'VGG', 'Dense'], default=NN)
     parser.add_argument('--morph', dest='morphology', type=str, help='select morphological parameter to predict', choices=['all', 'radius', 'distance'], default=FLAG)
     parser.add_argument('--distr', dest='distr', type=bool, help='predict variance', default=DISTRIBUTION)
-    parser.add_argument('--loss', dest='loss', type=str, help='select loss function for training', choices=['mse', 'monotonic_mse', 'cce', 'monotonic_cce'], default=LOSS)
+    parser.add_argument('--loss', dest='loss', type=str, help='select loss function for training', choices=['mse', 'monotonic_mse', 'cce', 'monotonic_cce', 'kld', 'monotonic_kld'], default=LOSS)
+    parser.add_argument('--informed', dest='informed', type=bool, help='use physics-informed learning', default=INFORMED)
     parser.add_argument('--estimation', dest='estimation', type=str, help='select confidence estimation methode, keep in mind "cross_validation" suitable only when simulations are used as validation data',
                                                                      choices=['naive', 'cross_validation', 'none'], default=ESTIMATION)
     parser.add_argument('--radius_classes', dest='radius_classes', type=int, help='number of possible classes for radius', default=LABELS_R)

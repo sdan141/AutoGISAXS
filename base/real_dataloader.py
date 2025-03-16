@@ -17,6 +17,8 @@ class Experiment:
             self.load_real()
         images = []
         files = glob.glob(self.data_path + '*.cbf')
+        files = sorted(glob.glob(self.data_path + '*.cbf'))
+
         for file in files:
             # flip top and bottom (vertical flip in y-direction)
             image = numpy.flip(fabio.open(file).data, axis=0)

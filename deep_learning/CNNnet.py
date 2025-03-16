@@ -28,11 +28,11 @@ class CNNNet(algorithm.AlgorithmBase):
         #input_shape = imagenet_utils._obtain_input_shape(input_shape, default_size=224, min_size=32, data_format=backend.image_data_format(), require_flatten=True)
         image = layers.Input(shape=input_shape,name="image")
         # first block
-        x = layers.Conv2D(filters=num_filter, kernel_size=filter_size, padding='same', name='block1_conv1')(image)
+        x = layers.Conv2D(filters=num_filter, kernel_size=filter_size, name='block1_conv1')(image)
         x = layers.LeakyReLU(alpha=0.03)(x) if self.activations[0]=='l' else layers.ReLU()(x)
         x = layers.MaxPooling2D((2, 2), strides=(2, 2), name='block1_pool')(x)
         # second block
-        x = layers.Conv2D(filters=num_filter, kernel_size=filter_size, padding='same', name='block2_conv1')(x)
+        x = layers.Conv2D(filters=num_filter, kernel_size=filter_size, name='block2_conv1')(x)
         x = layers.LeakyReLU(alpha=0.03)(x) if self.activations[1]=='l' else layers.ReLU()(x)
         # flatten
         x = layers.Flatten(name='flatten')(x)

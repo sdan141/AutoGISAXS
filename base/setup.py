@@ -36,3 +36,4 @@ class Experiment:
     def get_experiment_maskfile(self):
         experiment_mask = fabio.open(self.path_project + 'base/masks/' + self.experiment_maskfile)
         return experiment_mask.data
+

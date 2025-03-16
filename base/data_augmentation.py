@@ -12,6 +12,7 @@ class DataAugmentation:
         self.experiment_setup = experiment_setup
         self.detector = detector
         self.beta = beta
+        print(self.beta)
         self.ROI = None
         self.add_noise = False
         self.median = False
@@ -203,7 +204,6 @@ class DataAugmentation:
         masked_image = masked_image.filled(fill_value=0.0)
         return masked_image
 
-
     ###################
     # fitting functions
     ###################
@@ -272,14 +272,15 @@ class DataAugmentation:
             if self.median: image = self.median_filter(image)
             # gradient filter
             if self.gradient: image = self.gradient_filter(image)
+            # normalize
+            image = self.normalize(image=image)
             # intensity and background thresholding
             if self.beta != None: image = self.intensity_background_thresholding(image,beta=self.beta)
             # crop module (ROI cut)
             if self.ROI != None: image = self.crop_roi(image,self.ROI)
             # mask
             image = self.mask_image(image=image, mask=detector_mask)
-            # normalize
-            image = self.normalize(image=image)
+
             # append images
             fitted_images.append(image)
 
@@ -336,18 +337,19 @@ class DataAugmentation:
             if self.median: image = self.median_filter(image=image, median_smooth_factor=7)
             # gradient filter
             if self.gradient: image = self.gradient_filter(image=image)
+            # normalize
+            image = self.normalize(image=image)
             # intensity and background thresholding
             if self.beta != None: image = self.intensity_background_thresholding(image=image, beta=self.beta)
             # crop module (rigion of interest cut)
             if self.ROI != None: image = self.crop_roi(image=image, cut=self.ROI)
             # mask
             image = self.mask_image(image=image, mask=detector_mask)
-            # normalize
-            image = self.normalize(image=image)
+
             fitted_experiment_images.append(image)
         return fitted_experiment_images, experiment_target_values
 
-    def fit_real(self, real):
+    def fit_real(self, real, sample=None):
         # load data
         real_images, files = real.get_images()
         # start fitting
@@ -377,6 +379,9 @@ class DataAugmentation:
             # normalize
             image = self.normalize(image=image)
             fitted_real_images.append(image)
+            if sample:
+                if len(fitted_real_images) >= sample:
+                    break
         return fitted_real_images, files
 
     ####################################################
@@ -463,18 +468,21 @@ class DataAugmentation:
         # gamma + beta*m10 - beta*gamma = beta*m10 + gamma * (1 - beta)
         return gamma, tau
 
-    def intensity_background_thresholding(self, image, beta, sample_perc=0.25, global_tau=False, global_gamma=False):
+    def intensity_background_thresholding(self, image, beta, sample_perc=0.25, global_tau=True, global_gamma=False):
         if global_tau and global_gamma:
             if not self.tau and not self.gamma:
                 step = int(1/sample_perc)
-                intensities = image[1:image.shape[0]:step,1:image.shape[1]:step].flatten()
+                #intensities = image[1:image.shape[0]:step,1:image.shape[1]:step].copy().flatten()
+                intensities = image[1:image.shape[0]:4,1:image.shape[1]:4].copy().flatten()
+
                 self.gamma, self.tau = self.compute_background_level_and_intensity_threshold(intensities, beta)
             image[image < self.gamma] = self.gamma
             image[image > self.tau] = self.tau
 
         else:
             step = int(1/sample_perc)
-            intensities = image[1:image.shape[0]:step,1:image.shape[1]:step].flatten()
+            #intensities = image[1:image.shape[0]:step,1:image.shape[1]:step].copy().flatten()
+            intensities = image[1:image.shape[0]:4,1:image.shape[1]:4].copy().flatten()  
             gamma, tau = self.compute_background_level_and_intensity_threshold(intensities, beta)
             if global_gamma:
                 if not self.gamma:
@@ -506,6 +514,8 @@ class DataAugmentation:
 
     def find_intensity_center(self, image, offset=15):
         return np.argmax(np.sum(image[:,offset:],axis=0))+offset
+        # summing the columns of the image (all y coordinates for each x)
+        # index of the largest sum is the x coordinate of the intensity center
 
     def is_valid_peak(self, image, distance, threshold=5):
         target_peak = self.calculate_py_max(distance, mod="raw_sim") # eventually try with fitted_sim just to ensure 
@@ -514,3 +524,24 @@ class DataAugmentation:
             return False
         else:
             return True
+
+    def get_information(self):
+        lamda = self.experiment_setup.get_wavelength()
+        d_sd = self.experiment_setup.get_sample_detector_distance()
+        db_x = self.experiment_setup.get_direct_beam_position()[1]
+        px_y = self.detector.get_pixel2() * 1000 # pixel size in mm
+
+        def approx_peak_penalty(inputs, outputs):
+            is_peak = [self.find_intensity_center(i) for i in inputs]
+            target_peak = ((d_sd * np.tan(2*np.arcsin(lamda/(2*outputs)))) / (2*px_y)) - 13 # image binned to half size and offset of 13 was taken to cut window
+            diffs = np.abs(is_peak - target_peak)
+            # if D:
+            #     offset = 75
+            #     return d_sd * (np.tan(2*np.arcsin(lamda/(2*D)))/px_y) +  offset # pred_py_max
+            # else: 
+            #     return np.argmax(np.sum(i[:,5:],axis=0))+5 # is_py_max
+        #offset = 75#self.detector.get_maximum_shape()[1] +2*13 #- db_x#self.get_horizontal_cut_position()
+        #d = lamda/(2*np.sin(0.5*np.arctan(((2*py_max + offset)*px_y)/d_sd)))
+            return np.where(diffs < 5, 0, diffs).astype(np.float32)
+        
+        return approx_peak_penalty

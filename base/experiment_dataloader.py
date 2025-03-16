@@ -22,7 +22,9 @@ class Dataset:
 
     def preprocess_dataframe(self, dataframe, last_frame_mode='thickness'):
         # convert 'Frame' from float64 to int64
-        dataframe['Frame'] = dataframe['Frame'].astype(int) + (260 if '300' in self.folder else 0) # need to modify the dataset eventually
+        dataframe['Frame'] = dataframe['Frame'].astype(int) #+ (260 if '300' in self.folder else 0) # need to modify the dataset eventually
+        if self.folder == 'sputter_300K':
+            dataframe['Frame'] += 850
         # keep relevant columns
         dataframe = dataframe[['Frame', 'Distance', 'Radius', 'thickness']]
         dataframe.insert(loc=0, column='Measurement', value=self.folder)
@@ -78,6 +80,8 @@ class Dataset:
         for index, row in target_values.iterrows():
             images = []
             for frame in range(row.Frame - number_images_summed + 1, row.Frame + 1):
+            #for frame in range(row.Frame - number_images_summed, row.Frame):
+
                 number = str(frame).zfill(5) # format: "00000"
                 try:
                     # flip top and bottom (vertical flip in y-direction)
@@ -91,6 +95,10 @@ class Dataset:
                 except IndexError as e:
                     print(f'\n Frame {frame} not available or does not exist. \nError: {e}\n')
                     continue
+                
+            if np.count_nonzero(sum(images)> 0.0) < 500 :
+                print(f"\nEmpty image corresponds to: {row}")
+
             summed_images.append(sum(images))
             if self.sample:
                 if len(summed_images)>=self.sample:
@@ -151,6 +159,7 @@ class Experiment:
         images_K = np.array(images)[filtered_targets_by_K]
         assert len(images_K)==len(targets_K)
         if sample:
-            targets_K = targets_K.sample(n=sample)
+            targets_K = targets_K.sample(n=sample).sort_index()
             images_K = images_K[targets_K.index]
+            targets_K = targets_K.reset_index(drop=True)
         return images_K, targets_K

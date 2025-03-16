@@ -6,7 +6,7 @@ class LabelCoder:
 
     def __init__(self, output_units, morphology='all', distr=False):
 
-        self.mode = "one-hot" #"lognorm" #   "normal"
+        self.mode = "one-hot" # "lognorm" #  "normal" # 
 
         self.n_radius_units = output_units['radius']
         self.n_distance_units = output_units['distance']
@@ -18,13 +18,13 @@ class LabelCoder:
         # self.sigma_radius = np.arange(0.1, 0.1+self.n_sigma_units*0.01, 0.01)
         # self.omega_distance= np.arange(0.1, 0.1+self.n_omega_units*0.01, 0.01)
         self.radius = np.round(np.linspace(1.2, 28.1, self.n_radius_units),1)
-        self.distance = np.round(np.linspace(3.8, 40.8, self.n_distance_units),1)
+        self.distance = np.round(np.linspace(3.8, 41.7, self.n_distance_units),1)
         self.sigma_radius = np.round(np.linspace(0.01, 0.75, self.n_sigma_units),2)
         self.omega_distance= np.round(np.linspace(0.01, 0.75, self.n_omega_units),2)        
 
         self.prob_space = {'radius':self.radius, 'distance': self.distance, 'sigma_radius': self.sigma_radius, 'omega_radius': self.omega_distance}
 
-        print(f"Probability Space for predictions: {self.prob_space}")
+        #print(f"Probability Space for predictions: {self.prob_space}")
 
     def create_labels(self, target_values, key, sigmas=None):
         '''
@@ -46,7 +46,7 @@ class LabelCoder:
                 label = utils.lognorm_func(self.prob_space[key], s, loc=mu)
                 label /= np.sum(label)
 
-            if self.mode == "norm" and sigma:
+            elif self.mode == "norm" and sigma:
                 label = norm.pdf(self.prob_space[key], loc=target, scale=sigma)
                 label /= np.sum(label)
 
